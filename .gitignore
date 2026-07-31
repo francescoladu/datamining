@@ -1,0 +1,42 @@
+# ==========================================
+# 1. Virtual Environments (Isolation)
+# ==========================================
+.venv/
+venv/
+env/
+ENV/
+
+# ==========================================
+# 2. Python & Jupyter Notebook Caches
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.pytest_cache/
+
+# ==========================================
+# 3. Data Files (Avoid committing heavy files)
+# ==========================================
+# We ignore the contents of the data folder but keep the folder itself
+data/*
+!data/.gitkeep
+# Ignore the hidden stamp file from the Makefile
+data/.extracted
+
+# ==========================================
+# 4. Microsoft Office & Temp Files
+# ==========================================
+# Prevents committing temporary Office files like "~$oject_proposal..."
+~$*.docx
+~$*.xlsx
+~$*.pptx
+~WRL*.tmp
+*.tmp
+
+# ==========================================
+# 5. OS-Specific System Files
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
