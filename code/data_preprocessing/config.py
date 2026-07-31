@@ -2,48 +2,63 @@ from pathlib import Path
 
 
 # ============================================================
-# DATASET
+# 1. PATHS
 # ============================================================
 
-DATASET_PATH = Path("phishing_clean.csv")
+# This file lives at code/data_preprocessing/config.py, so the
+# repository root is two levels up.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+DATA_DIR = PROJECT_ROOT / "data"
+
+# Both dataset splits are supported. The analysis can be run on
+# either split, or both, by iterating over this dict.
+DATASET_PATHS = {
+    "train": DATA_DIR / "train_cleaned.csv",
+    # "test": DATA_DIR / "test_cleaned.csv",
+}
+# ============================================================
+# 2. DATASET SETTINGS
+# ============================================================
 
 TARGET_COLUMN = "Result"
 
-# Colonne che possono essere state salvate accidentalmente
-# durante la creazione del CSV.
+# Columns that may result from saving the DataFrame (e.g. an
+# extra index column written out by a previous export step).
 INDEX_COLUMNS = [
     "index",
     "Unnamed: 0",
 ]
 
-
-# ============================================================
-# CLASSI
-# ============================================================
-
 PHISHING_LABEL = -1
 LEGITIMATE_LABEL = 1
 
-
-# ============================================================
-# RIPRODUCIBILITÀ
-# ============================================================
-
 RANDOM_STATE = 42
 
+# Number of features to show in the phishing rate heatmap.
+TOP_FEATURES_NUMBER = 8
+
+# Number of strongest correlations to show.
+TOP_CORRELATIONS_NUMBER = 15
+
 
 # ============================================================
-# FILE DI OUTPUT
+# 3. OUTPUT FILES
 # ============================================================
 
-CORRELATION_MATRIX_PATH = Path(
-    "pearson_correlation_matrix.csv"
-)
+OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
 
-CORRELATION_HEATMAP_PDF_PATH = Path(
-    "pearson_correlation_heatmap.pdf"
-)
 
-CORRELATION_HEATMAP_PNG_PATH = Path(
-    "pearson_correlation_heatmap.png"
-)
+def correlation_matrix_path(dataset_name: str) -> Path:
+    """CSV path for the Pearson correlation matrix of a given dataset split."""
+    return OUTPUT_DIR / f"pearson_correlation_matrix_{dataset_name}.csv"
+
+
+def correlation_heatmap_pdf_path(dataset_name: str) -> Path:
+    """PDF path for the Pearson correlation heatmap of a given dataset split."""
+    return OUTPUT_DIR / f"pearson_correlation_heatmap_{dataset_name}.pdf"
+
+
+def correlation_heatmap_png_path(dataset_name: str) -> Path:
+    """PNG path for the Pearson correlation heatmap of a given dataset split."""
+    return OUTPUT_DIR / f"pearson_correlation_heatmap_{dataset_name}.png"

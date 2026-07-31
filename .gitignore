@@ -25,7 +25,24 @@ data/*
 data/.extracted
 
 # ==========================================
-# 4. Microsoft Office & Temp Files
+# 4. Generated Outputs & Plots (Build Artifacts)
+# ==========================================
+# Prevents committing dynamically generated charts, PDFs, and statistical matrices
+code/data_preprocessing/outputs/
+
+# ==========================================
+# 5. IDE / Editor Specific Configurations
+# ==========================================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# ==========================================
+# 6. Microsoft Office & Temp Files
 # ==========================================
 # Prevents committing temporary Office files like "~$oject_proposal..."
 ~$*.docx
@@ -35,7 +52,7 @@ data/.extracted
 *.tmp
 
 # ==========================================
-# 5. OS-Specific System Files
+# 7. OS-Specific System Files
 # ==========================================
 .DS_Store
 Thumbs.db

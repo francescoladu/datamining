@@ -1,226 +1,130 @@
 from pathlib import Path
-
-import numpy as np
 import pandas as pd
+
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
-def plot_class_distribution(
-    data: pd.DataFrame,
-    target_column: str,
-    phishing_label: int,
-    legitimate_label: int,
-):
-    """
-    Crea il grafico della distribuzione delle classi.
-    """
-    class_counts = data[target_column].value_counts()
-
-    phishing_count = int(
-        class_counts.get(phishing_label, 0)
-    )
-
-    legitimate_count = int(
-        class_counts.get(legitimate_label, 0)
-    )
-
-    counts = [
-        phishing_count,
-        legitimate_count,
-    ]
-
-    labels = [
-        f"Phishing ({phishing_label})",
-        f"Legitimate ({legitimate_label})",
-    ]
-
-    figure, axis = plt.subplots(
-        figsize=(6.2, 4.2)
-    )
-
-    bars = axis.bar(
-        labels,
-        counts,
-    )
-
-    axis.set_ylabel("Number of websites")
-
-    axis.set_title(
-        "Target class distribution"
-    )
-
-    maximum_count = max(counts)
-
-    if maximum_count > 0:
-        axis.set_ylim(
-            0,
-            maximum_count * 1.18,
-        )
-
-    for bar, count in zip(bars, counts):
-        percentage = (
-            100 * count / len(data)
-            if len(data) > 0
-            else 0.0
-        )
-
-        axis.text(
-            bar.get_x() + bar.get_width() / 2,
-            count + maximum_count * 0.025,
-            f"{count:,}\n({percentage:.2f}%)",
-            ha="center",
-            va="bottom",
-        )
-
-    figure.tight_layout()
-
-    return figure, axis
+import config
 
 
-def plot_class_rate_heatmap(
-    rate_table: pd.DataFrame,
-    class_name: str = "Phishing",
-):
-    """
-    Crea una heatmap con il tasso della classe
-    per ciascun valore delle feature.
-    """
-    matrix = rate_table.to_numpy(
-        dtype=float
-    )
-
-    masked_matrix = np.ma.masked_invalid(
-        matrix
-    )
-
-    figure, axis = plt.subplots(
-        figsize=(7.2, 5.2)
-    )
-
-    image = axis.imshow(
-        masked_matrix,
-        aspect="auto",
-        vmin=0,
-        vmax=100,
-    )
-
-    axis.set_xticks(
-        range(len(rate_table.columns))
-    )
-
-    axis.set_xticklabels(
-        [
-            str(value)
-            for value in rate_table.columns
-        ]
-    )
-
-    axis.set_yticks(
-        range(len(rate_table.index))
-    )
-
-    axis.set_yticklabels(
-        [
-            feature.replace("_", " ")
-            for feature in rate_table.index
-        ]
-    )
-
-    axis.set_xlabel("Feature value")
-
-    axis.set_title(
-        f"{class_name} rate for selected features"
-    )
-
-    for row_index in range(matrix.shape[0]):
-        for column_index in range(matrix.shape[1]):
-            value = matrix[
-                row_index,
-                column_index,
-            ]
-
-            if not np.isnan(value):
-                axis.text(
-                    column_index,
-                    row_index,
-                    f"{value:.1f}%",
-                    ha="center",
-                    va="center",
-                    fontsize=8,
-                )
-
-    figure.colorbar(
-        image,
-        ax=axis,
-        label=f"{class_name} observations (%)",
-    )
-
-    figure.tight_layout()
-
-    return figure, axis
-
-
-def plot_pearson_correlation_heatmap(
+def plot_correlation_heatmap(
     correlation_matrix: pd.DataFrame,
-):
-    """
-    Crea la heatmap della matrice di correlazione
-    di Pearson tra tutte le feature.
-    """
-    figure, axis = plt.subplots(
-        figsize=(20, 18)
-    )
-
-    sns.heatmap(
-        correlation_matrix,
-        annot=True,
-        linewidths=0.5,
-        fmt=".2f",
-        ax=axis,
-        vmin=-1,
-        vmax=1,
-        cmap="coolwarm",
-    )
-
-    axis.set_title(
-        "Pearson Correlation Matrix of Predictive Features",
-        fontsize=16,
-    )
-
-    axis.set_xticklabels(
-        axis.get_xticklabels(),
-        rotation=90,
-        fontsize=8,
-    )
-
-    axis.set_yticklabels(
-        axis.get_yticklabels(),
-        rotation=0,
-        fontsize=8,
-    )
-
-    figure.tight_layout()
-
-    return figure, axis
-
-
-def save_figure(
-    figure,
-    pdf_path: str | Path,
-    png_path: str | Path,
-    dpi: int = 300,
+    pdf_path: Path,
+    png_path: Path,
 ) -> None:
     """
-    Salva una figura sia in PDF sia in PNG.
+    Generate and save a Pearson correlation heatmap for all feature columns.
+    
+    Annotations are omitted by default because a 30x30 matrix is too dense 
+    to view legibly with values overlaid inside the cells.
     """
-    figure.savefig(
-        pdf_path,
-        bbox_inches="tight",
+    plt.figure(figsize=(16, 14))
+    
+    sns.heatmap(
+        correlation_matrix,
+        cmap="coolwarm",
+        vmin=-1,
+        vmax=1,
+        annot=False,
+        linewidths=0.5,
+        square=True,
+        cbar_kws={"shrink": 0.8}
     )
+    
+    plt.title("Pearson Correlation Matrix (Feature-to-Feature)", fontsize=16, pad=20)
+    plt.xticks(rotation=45, ha='right', fontsize=10)
+    plt.yticks(fontsize=10)
+    plt.tight_layout()
+    
+    # Ensure parent output directory exists
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    plt.savefig(pdf_path, format="pdf", dpi=300)
+    plt.savefig(png_path, format="png", dpi=300)
+    plt.close()
 
-    figure.savefig(
-        png_path,
-        dpi=dpi,
-        bbox_inches="tight",
+
+def plot_phishing_rate_heatmap(
+    rate_table: pd.DataFrame,
+    pdf_path: Path,
+    png_path: Path,
+) -> None:
+    """
+    Generate and save a heatmap detailing the phishing rate (%) 
+    by feature and specific feature value.
+    """
+    plt.figure(figsize=(10, 8))
+    
+    # Convert numerical column headers into human-readable descriptions
+    header_mapping = {
+        -1: "-1 (Phishing / Low)",
+        0: "0 (Suspicious / Mid)",
+        1: "1 (Legitimate / High)"
+    }
+    
+    # Extract only existing column codes found in the table
+    columns_to_rename = {k: v for k, v in header_mapping.items() if k in rate_table.columns}
+    plot_table = rate_table.rename(columns=columns_to_rename)
+    
+    sns.heatmap(
+        plot_table,
+        cmap="Reds",
+        vmin=0,
+        vmax=100,
+        annot=True,
+        fmt=".1f",
+        linewidths=0.5,
+        cbar_kws={"label": "Phishing Rate (%)"}
     )
+    
+    plt.title(
+        f"Phishing Rate (%) by Feature and Value\n(Top {len(rate_table)} Features Ranked by Mutual Information)",
+        fontsize=14,
+        pad=15
+    )
+    plt.ylabel("Feature Name", fontsize=12)
+    plt.xlabel("Feature Value Code", fontsize=12)
+    plt.tight_layout()
+    
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    plt.savefig(pdf_path, format="pdf", dpi=300)
+    plt.savefig(png_path, format="png", dpi=300)
+    plt.close()
+
+
+def plot_mutual_information(
+    mi_df: pd.DataFrame,
+    pdf_path: Path,
+    png_path: Path,
+    top_n: int = 15,
+) -> None:
+    """
+    Generate and save a horizontal bar plot displaying features 
+    with the highest Mutual Information scores.
+    """
+    plt.figure(figsize=(10, 7))
+    
+    plot_data = mi_df.head(top_n)
+    
+    sns.barplot(
+        x="Mutual Information",
+        y="Feature",
+        data=plot_data,
+        palette="viridis",
+        hue="Feature",
+        legend=False
+    )
+    
+    plt.title(f"Top {top_n} Features Ranked by Mutual Information Score", fontsize=14, pad=15)
+    plt.xlabel("Mutual Information Score", fontsize=12)
+    plt.ylabel("Feature Name", fontsize=12)
+    plt.tight_layout()
+    
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    plt.savefig(pdf_path, format="pdf", dpi=300)
+    plt.savefig(png_path, format="png", dpi=300)
+    plt.close()
