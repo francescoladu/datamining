@@ -1,4 +1,0 @@
-paper scientifico: https://www.sabapub.com/index.php/jitc/article/view/891
-
-
-dataset: https://archive.ics.uci.edu/dataset/327/phishing+websites

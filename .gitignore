@@ -27,8 +27,8 @@ data/.extracted
 # ==========================================
 # 4. Generated Outputs & Plots (Build Artifacts)
 # ==========================================
-# Prevents committing dynamically generated charts, PDFs, and statistical matrices
-code/data_preprocessing/outputs/
+# Automatically ignores any 'outputs' folder anywhere in the repository
+**/outputs/
 
 # ==========================================
 # 5. IDE / Editor Specific Configurations
