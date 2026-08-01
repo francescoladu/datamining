@@ -41,6 +41,16 @@ outer_cv = StratifiedKFold(
     random_state=RANDOM_STATE,
 )
 
+train_df = pd.read_csv("data/train_cleaned.csv")
+test_df = pd.read_csv("data/test_cleaned.csv")
+
+
+X_dev = train_df.drop(columns=["Result"])
+y_dev = train_df["Result"]
+
+X_test = test_df.drop(columns=["Result"])
+y_test = test_df["Result"]
+
 # The same outer folds will be used for both model families.
 # This makes the comparison between Decision Tree and Random Forest paired
 # and more consistent.
