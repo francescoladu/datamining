@@ -1,11 +1,199 @@
+from __future__ import annotations
+
+import json
 from typing import Any
+
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold, GridSearchCV, RandomizedSearchCV
+from sklearn.inspection import permutation_importance
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
 
 import config
-from utils import select_rows, compute_classification_metrics
+from utils import (
+    compute_classification_metrics,
+    predict_with_phishing_probability,
+    select_rows,
+)
+
+
+def _json_default(value: Any) -> Any:
+    """Convert NumPy scalar values into standard Python values for JSON."""
+    if isinstance(value, np.generic):
+        return value.item()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _parameter_columns(parameters: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a SearchCV parameter dictionary into CSV-friendly columns."""
+    return {
+        parameter_name: parameter_value
+        for parameter_name, parameter_value in parameters.items()
+    }
+
+
+def _extract_feature_rows(
+    *,
+    model_name: str,
+    outer_fold: int,
+    fitted_pipeline: Pipeline,
+    feature_names: list[str],
+) -> list[dict[str, Any]]:
+    """Extract MI scores, ranks, and selection status for every input feature."""
+    selector = fitted_pipeline.named_steps["feature_selection"]
+    selected_mask = np.asarray(selector.get_support(), dtype=bool)
+    scores = np.asarray(selector.scores_, dtype=float)
+
+    # Highest Mutual Information score receives rank 1.
+    ranks = (
+        pd.Series(scores)
+        .rank(method="min", ascending=False, na_option="bottom")
+        .astype(int)
+        .to_numpy()
+    )
+
+    selected_k = selector.k
+    selected_feature_count = int(selected_mask.sum())
+
+    return [
+        {
+            "model": model_name,
+            "outer_fold": outer_fold,
+            "selected_k": selected_k,
+            "selected_feature_count": selected_feature_count,
+            "feature": feature_name,
+            "mutual_information_score": float(score),
+            "mutual_information_rank": int(rank),
+            "selected": bool(is_selected),
+        }
+        for feature_name, score, rank, is_selected in zip(
+            feature_names,
+            scores,
+            ranks,
+            selected_mask,
+        )
+    ]
+
+
+def _extract_prediction_rows(
+    *,
+    model_name: str,
+    outer_fold: int,
+    fitted_pipeline: Pipeline,
+    X_outer_validation: Any,
+    y_outer_validation: Any,
+    outer_validation_idx: np.ndarray,
+) -> list[dict[str, Any]]:
+    """Create one out-of-fold prediction record per validation observation."""
+    y_pred, phishing_probability = predict_with_phishing_probability(
+        fitted_pipeline,
+        X_outer_validation,
+    )
+    y_true = np.asarray(y_outer_validation)
+
+    # With two classes, P(legitimate) = 1 - P(phishing).
+    predicted_confidence = np.where(
+        y_pred == -1,
+        phishing_probability,
+        1.0 - phishing_probability,
+    )
+
+    original_indices = (
+        np.asarray(X_outer_validation.index)
+        if hasattr(X_outer_validation, "index")
+        else np.asarray(outer_validation_idx)
+    )
+
+    prediction_rows: list[dict[str, Any]] = []
+    for position, original_index, truth, prediction, probability, confidence in zip(
+        outer_validation_idx,
+        original_indices,
+        y_true,
+        y_pred,
+        phishing_probability,
+        predicted_confidence,
+    ):
+        correct = bool(truth == prediction)
+
+        if truth == -1 and prediction == -1:
+            error_type = "true_positive_phishing"
+        elif truth != -1 and prediction != -1:
+            error_type = "true_negative_legitimate"
+        elif truth == -1 and prediction != -1:
+            error_type = "false_negative"
+        else:
+            error_type = "false_positive"
+
+        prediction_rows.append(
+            {
+                "model": model_name,
+                "outer_fold": outer_fold,
+                "sample_position": int(position),
+                "sample_index": original_index,
+                "y_true": truth,
+                "y_pred": prediction,
+                "phishing_probability": float(probability),
+                "predicted_confidence": float(confidence),
+                "correct": correct,
+                "error_type": error_type,
+                "high_confidence_error": bool(
+                    (not correct)
+                    and confidence >= config.HIGH_CONFIDENCE_THRESHOLD
+                ),
+            }
+        )
+
+    return prediction_rows
+
+
+def _extract_search_rows(
+    *,
+    model_name: str,
+    outer_fold: int,
+    search: GridSearchCV | RandomizedSearchCV,
+) -> pd.DataFrame:
+    """Convert the complete inner SearchCV results into a compact DataFrame."""
+    results = pd.DataFrame(search.cv_results_).copy()
+    results.insert(0, "candidate_id", np.arange(1, len(results) + 1))
+    results.insert(0, "outer_fold", outer_fold)
+    results.insert(0, "model", model_name)
+
+    if "params" in results.columns:
+        results["params"] = results["params"].map(
+            lambda value: json.dumps(
+                value,
+                sort_keys=True,
+                default=_json_default,
+            )
+        )
+
+    preferred_columns = [
+        "model",
+        "outer_fold",
+        "candidate_id",
+        "rank_test_score",
+        "mean_test_score",
+        "std_test_score",
+        "mean_fit_time",
+        "std_fit_time",
+        "mean_score_time",
+        "std_score_time",
+        "params",
+    ]
+    parameter_columns = sorted(
+        column for column in results.columns if column.startswith("param_")
+    )
+    split_columns = sorted(
+        column
+        for column in results.columns
+        if column.startswith("split") and column.endswith("_test_score")
+    )
+    available_columns = [
+        column
+        for column in preferred_columns + parameter_columns + split_columns
+        if column in results.columns
+    ]
+    return results[available_columns]
 
 
 def nested_cross_validation(
@@ -18,47 +206,47 @@ def nested_cross_validation(
     y: Any,
     outer_splits: list[tuple[np.ndarray, np.ndarray]],
     n_random_iterations: int = config.N_RANDOM_ITERATIONS,
-) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+) -> dict[str, pd.DataFrame]:
     """
-    Run nested stratified cross-validation for a specific model family.
+    Run nested stratified cross-validation and return analysis-ready tables.
 
-    Inner CV:
-        Iteratively selects the optimal number of features and classifier 
-        hyperparameters using Grid Search or Randomized Search.
-
-    Outer CV:
-        Evaluates the best selected pipeline configuration on untouched test folds 
-        that were excluded from both feature and parameter selection.
+    Returned tables include fold-level metrics, best parameters, selected
+    features, out-of-fold predictions, all inner-search candidates, and
+    permutation importance measured on untouched outer validation folds.
     """
+    if not hasattr(X, "columns"):
+        raise TypeError(
+            "X must be a pandas DataFrame so feature names can be exported."
+        )
+
+    feature_names = list(X.columns)
+
     fold_results: list[dict[str, Any]] = []
     selected_configurations: list[dict[str, Any]] = []
+    feature_rows: list[dict[str, Any]] = []
+    prediction_rows: list[dict[str, Any]] = []
+    search_result_frames: list[pd.DataFrame] = []
+    permutation_rows: list[dict[str, Any]] = []
 
     for outer_fold, (outer_train_idx, outer_validation_idx) in enumerate(
         outer_splits,
         start=1,
     ):
-        print(
-            f"{model_name} - outer fold "
-            f"{outer_fold}/{len(outer_splits)}"
-        )
+        print(f"{model_name} - outer fold {outer_fold}/{len(outer_splits)}")
 
-        # Slice training and validation sets for this outer fold
         X_outer_train = select_rows(X, outer_train_idx)
         y_outer_train = select_rows(y, outer_train_idx)
-
         X_outer_validation = select_rows(X, outer_validation_idx)
         y_outer_validation = select_rows(y, outer_validation_idx)
 
-        # Re-initialize the inner CV split on each outer fold to vary fold alignments
         inner_cv = StratifiedKFold(
             n_splits=4,
             shuffle=True,
             random_state=config.RANDOM_STATE + outer_fold,
         )
 
-        # Build search objects dynamically based on the requested method
         if search_method == "grid":
-            inner_search = GridSearchCV(
+            inner_search: GridSearchCV | RandomizedSearchCV = GridSearchCV(
                 estimator=pipeline,
                 param_grid=search_space,
                 scoring=config.PRIMARY_SCORING,
@@ -68,7 +256,6 @@ def nested_cross_validation(
                 return_train_score=False,
                 error_score="raise",
             )
-
         elif search_method == "random":
             inner_search = RandomizedSearchCV(
                 estimator=pipeline,
@@ -82,34 +269,29 @@ def nested_cross_validation(
                 return_train_score=False,
                 error_score="raise",
             )
-
         else:
-            raise ValueError(
-                "search_method must be either 'grid' or 'random'."
-            )
+            raise ValueError("search_method must be either 'grid' or 'random'.")
 
-        # Train the hyperparameter search wrapper on the outer training fold
-        # (This automatically computes feature selection on training splits only)
-        inner_search.fit(
-            X_outer_train,
-            y_outer_train,
-        )
-
+        inner_search.fit(X_outer_train, y_outer_train)
         best_pipeline = inner_search.best_estimator_
 
-        # Evaluate the optimized pipeline on the untouched validation fold
         metrics = compute_classification_metrics(
             fitted_pipeline=best_pipeline,
             X_validation=X_outer_validation,
             y_validation=y_outer_validation,
         )
 
-        # Record metrics and hyperparameter targets for auditing
+        selector = best_pipeline.named_steps["feature_selection"]
+        selected_k = selector.k
+        selected_feature_count = int(np.asarray(selector.get_support()).sum())
+
         fold_results.append(
             {
                 "model": model_name,
                 "outer_fold": outer_fold,
-                "inner_best_macro_f1": inner_search.best_score_,
+                "selected_k": selected_k,
+                "selected_feature_count": selected_feature_count,
+                "inner_best_macro_f1": float(inner_search.best_score_),
                 **metrics,
             }
         )
@@ -118,26 +300,84 @@ def nested_cross_validation(
             {
                 "model": model_name,
                 "outer_fold": outer_fold,
-                "best_inner_score": inner_search.best_score_,
-                "best_parameters": inner_search.best_params_,
+                "best_inner_score": float(inner_search.best_score_),
+                "selected_k": selected_k,
+                "selected_feature_count": selected_feature_count,
+                **_parameter_columns(inner_search.best_params_),
             }
         )
 
-        print(
-            f"  Inner best macro F1: "
-            f"{inner_search.best_score_:.4f}"
+        feature_rows.extend(
+            _extract_feature_rows(
+                model_name=model_name,
+                outer_fold=outer_fold,
+                fitted_pipeline=best_pipeline,
+                feature_names=feature_names,
+            )
         )
-        print(
-            f"  Outer macro F1: "
-            f"{metrics['macro_f1']:.4f}"
+
+        prediction_rows.extend(
+            _extract_prediction_rows(
+                model_name=model_name,
+                outer_fold=outer_fold,
+                fitted_pipeline=best_pipeline,
+                X_outer_validation=X_outer_validation,
+                y_outer_validation=y_outer_validation,
+                outer_validation_idx=outer_validation_idx,
+            )
         )
-        print(
-            f"  Best parameters: "
-            f"{inner_search.best_params_}"
+
+        search_result_frames.append(
+            _extract_search_rows(
+                model_name=model_name,
+                outer_fold=outer_fold,
+                search=inner_search,
+            )
         )
+
+        if config.COMPUTE_PERMUTATION_IMPORTANCE:
+            permutation_result = permutation_importance(
+                best_pipeline,
+                X_outer_validation,
+                y_outer_validation,
+                scoring=config.PRIMARY_SCORING,
+                n_repeats=config.PERMUTATION_N_REPEATS,
+                random_state=config.RANDOM_STATE + outer_fold,
+                n_jobs=-1,
+            )
+            selected_mask = np.asarray(selector.get_support(), dtype=bool)
+
+            for feature_name, is_selected, mean_value, std_value in zip(
+                feature_names,
+                selected_mask,
+                permutation_result.importances_mean,
+                permutation_result.importances_std,
+            ):
+                permutation_rows.append(
+                    {
+                        "model": model_name,
+                        "outer_fold": outer_fold,
+                        "feature": feature_name,
+                        "selected": bool(is_selected),
+                        "importance_mean": float(mean_value),
+                        "importance_std": float(std_value),
+                    }
+                )
+
+        print(f"  Inner best macro F1: {inner_search.best_score_:.4f}")
+        print(f"  Outer macro F1: {metrics['macro_f1']:.4f}")
+        print(f"  Selected k: {selected_k}")
+        print(f"  Best parameters: {inner_search.best_params_}")
         print()
 
-    return (
-        pd.DataFrame(fold_results),
-        selected_configurations,
-    )
+    return {
+        "fold_scores": pd.DataFrame(fold_results),
+        "best_parameters": pd.DataFrame(selected_configurations),
+        "selected_features": pd.DataFrame(feature_rows),
+        "oof_predictions": pd.DataFrame(prediction_rows),
+        "inner_search_results": pd.concat(
+            search_result_frames,
+            ignore_index=True,
+        ),
+        "permutation_importance": pd.DataFrame(permutation_rows),
+    }
