@@ -8,12 +8,16 @@ CLEANED_TRAIN = $(DATA_DIR)/train_cleaned.csv
 # Output locations to clean up
 PREPROCESS_OUTPUT_DIR = code/data_preprocessing/outputs
 MODEL_OUTPUT_DIR = code/model_selection/outputs
+EXPLAIN_OUTPUT_DIR = code/explainability/outputs
 
 # Detect if local venv exists and use its interpreter; otherwise, fall back to global python3
 PYTHON = $(shell [ -f venv/bin/python ] && echo "venv/bin/python" || echo "python3")
 VENV = venv
 
-.PHONY: all clean install analyze train setup help
+PIP = $(shell [ -f venv/bin/pip ] && echo "venv/bin/pip" || echo "pip3")
+REQUIREMENTS = requirements.txt
+
+.PHONY: all clean install analyze train explain setup dependencies help
 
 # Default target displays the help menu
 all: help
@@ -24,19 +28,29 @@ help:
 	@echo "  make install   - Download, extract, and clean the phishing dataset"
 	@echo "  make analyze   - Run validation, compute statistics, and generate EDA plots"
 	@echo "  make train     - Run nested CV, model family selection, and final test evaluation"
+	@echo "  make explain   - Run global and local explainability analysis (SHAP & Permutation Importance)"
 	@echo "  make clean     - Remove datasets, stamps, and all generated outputs"
 
 # Environment Setup
-setup:
+setup: $(VENV)/bin/activate
+
+$(VENV)/bin/activate: $(REQUIREMENTS)
 	@echo "Creating virtual environment in ./$(VENV)..."
 	python3 -m venv $(VENV)
+	@echo "Installing dependencies from $(REQUIREMENTS)..."
+	$(PIP) install --upgrade pip
+	$(PIP) install -r $(REQUIREMENTS)
+	@touch $(VENV)/bin/activate
 	@echo "------------------------------------------------------------"
-	@echo "Virtual environment created successfully."
+	@echo "Setup complete. Virtual environment created and updated."
 	@echo "To activate it, run:"
 	@echo "  source $(VENV)/bin/activate"
-	@echo "Then install the dependencies:"
-	@echo "  pip install pandas scipy scikit-learn seaborn matplotlib"
 	@echo "------------------------------------------------------------"
+
+# Target to manually force-update or install dependencies
+dependencies: $(REQUIREMENTS)
+	@echo "Updating dependencies..."
+	$(PIP) install -r $(REQUIREMENTS)
 
 install: $(CLEANED_TRAIN)
 
@@ -66,9 +80,15 @@ train: $(CLEANED_TRAIN)
 	@echo "Running Model Selection and Cross-Validation pipeline..."
 	$(PYTHON) code/model_selection/main.py
 
+# Automatically run the global and local explainability pipeline
+explain: $(CLEANED_TRAIN)
+	@echo "Running Explainability pipeline..."
+	$(PYTHON) code/explainability/main.py
+
 clean:
 	@echo "Removing dataset files, stamps, and all generated outputs..."
 	rm -rf $(DATA_DIR)/*
 	rm -f $(STAMP_FILE)
 	rm -rf $(PREPROCESS_OUTPUT_DIR)
 	rm -rf $(MODEL_OUTPUT_DIR)
+	rm -rf $(EXPLAIN_OUTPUT_DIR)
