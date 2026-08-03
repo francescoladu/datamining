@@ -40,6 +40,7 @@ data/.extracted
 *.njsproj
 *.sln
 *.swp
+__init__.py
 
 # ==========================================
 # 6. Microsoft Office & Temp Files

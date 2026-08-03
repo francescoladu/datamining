@@ -1,20 +1,14 @@
-from functools import partial
-
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_selection import SelectKBest, mutual_info_classif
-from sklearn.model_selection import StratifiedKFold
-from sklearn.pipeline import Pipeline
-from sklearn.tree import DecisionTreeClassifier
+# Import global configurations from shared module
+from shared.config import RANDOM_STATE
 
 # ===========================================================================
 # 1. GENERAL SETTINGS
 # ===========================================================================
 
-RANDOM_STATE = 42
 PRIMARY_SCORING = "f1_macro"
 
 # Number of configurations sampled by RandomizedSearchCV for Random Forest.
-N_RANDOM_ITERATIONS = 40
+N_RANDOM_ITERATIONS = 1
 
 # Compute permutation importance on every untouched outer validation fold.
 COMPUTE_PERMUTATION_IMPORTANCE = True
@@ -28,6 +22,10 @@ HIGH_CONFIDENCE_THRESHOLD = 0.80
 # must be evaluated only once, after the final experimental setup is chosen.
 EVALUATE_FINAL_TEST = False
 
+# Cross Validation Split settings (To be passed into StratifiedKFold in engine.py)
+N_OUTER_SPLITS = 5
+N_INNER_SPLITS = 5
+
 # ---------------------------------------------------------------------------
 # FEATURE-SELECTION EXPERIMENT
 # ---------------------------------------------------------------------------
@@ -37,50 +35,9 @@ EVALUATE_FINAL_TEST = False
 # FEATURE_SELECTION_K_VALUES = [5, 10, 15, 20, 25]  # Joint k search
 FEATURE_SELECTION_K_VALUES = ["all"]                # All 30 features
 
-# Outer CV evaluates the complete model-selection procedure.
-outer_cv = StratifiedKFold(
-    n_splits=5,
-    shuffle=True,
-    random_state=RANDOM_STATE,
-)
-
-# Inner CV used for the final search on the complete development set.
-final_inner_cv = StratifiedKFold(
-    n_splits=5,
-    shuffle=True,
-    random_state=RANDOM_STATE,
-)
-
-
 # ===========================================================================
-# 2. FEATURE-SELECTION FUNCTION
+# 2. DECISION TREE SEARCH SPACE
 # ===========================================================================
-
-# All predictors are discrete, so Mutual Information treats every feature as
-# discrete rather than as a continuous measurement.
-mutual_information = partial(
-    mutual_info_classif,
-    discrete_features=True,
-    random_state=RANDOM_STATE,
-)
-
-
-# ===========================================================================
-# 3. DECISION TREE PIPELINE AND SEARCH SPACE
-# ===========================================================================
-
-decision_tree_pipeline = Pipeline(
-    steps=[
-        (
-            "feature_selection",
-            SelectKBest(score_func=mutual_information),
-        ),
-        (
-            "classifier",
-            DecisionTreeClassifier(random_state=RANDOM_STATE),
-        ),
-    ]
-)
 
 decision_tree_param_grid = {
     "feature_selection__k": FEATURE_SELECTION_K_VALUES,
@@ -90,27 +47,9 @@ decision_tree_param_grid = {
     "classifier__min_samples_leaf": [1, 2, 4],
 }
 
-
 # ===========================================================================
-# 4. RANDOM FOREST PIPELINE AND SEARCH SPACE
+# 3. RANDOM FOREST SEARCH SPACE
 # ===========================================================================
-
-random_forest_pipeline = Pipeline(
-    steps=[
-        (
-            "feature_selection",
-            SelectKBest(score_func=mutual_information),
-        ),
-        (
-            "classifier",
-            RandomForestClassifier(
-                random_state=RANDOM_STATE,
-                # The parent SearchCV handles parallel computation.
-                n_jobs=1,
-            ),
-        ),
-    ]
-)
 
 random_forest_param_distributions = {
     "feature_selection__k": FEATURE_SELECTION_K_VALUES,

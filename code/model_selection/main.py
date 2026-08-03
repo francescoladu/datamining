@@ -17,7 +17,13 @@ if str(module_dir) not in sys.path:
     sys.path.insert(0, str(module_dir))
 
 import config
-from engine import nested_cross_validation
+from engine import (
+    nested_cross_validation,
+    decision_tree_pipeline,
+    random_forest_pipeline,
+    outer_cv,
+    final_inner_cv
+)
 from plots import plot_nested_cv_comparison
 from utils import (
     compute_classification_metrics,
@@ -583,8 +589,8 @@ def main() -> None:
                 "random_state": config.RANDOM_STATE,
                 "primary_scoring": config.PRIMARY_SCORING,
                 "random_forest_random_iterations": config.N_RANDOM_ITERATIONS,
-                "outer_folds": config.outer_cv.n_splits,
-                "final_inner_folds": config.final_inner_cv.n_splits,
+                "outer_folds": outer_cv.n_splits,
+                "final_inner_folds": final_inner_cv.n_splits,
                 "compute_permutation_importance": (
                     config.COMPUTE_PERMUTATION_IMPORTANCE
                 ),
@@ -606,7 +612,7 @@ def main() -> None:
     )
 
     # 3. Compute the shared outer splits once. Both models use the same folds.
-    outer_splits = list(config.outer_cv.split(X_dev, y_dev))
+    outer_splits = list(outer_cv.split(X_dev, y_dev))
 
     # 4. Nested CV: Decision Tree.
     print("-" * 80)
@@ -614,7 +620,7 @@ def main() -> None:
     print("-" * 80)
     decision_tree_results = nested_cross_validation(
         model_name="Decision Tree",
-        pipeline=config.decision_tree_pipeline,
+        pipeline=decision_tree_pipeline,
         search_space=config.decision_tree_param_grid,
         search_method="grid",
         X=X_dev,
@@ -628,7 +634,7 @@ def main() -> None:
     print("-" * 80)
     random_forest_results = nested_cross_validation(
         model_name="Random Forest",
-        pipeline=config.random_forest_pipeline,
+        pipeline=random_forest_pipeline,
         search_space=config.random_forest_param_distributions,
         search_method="random",
         X=X_dev,
@@ -787,10 +793,10 @@ def main() -> None:
 
     if best_model_family == "Decision Tree":
         final_search: GridSearchCV | RandomizedSearchCV = GridSearchCV(
-            estimator=config.decision_tree_pipeline,
+            estimator=decision_tree_pipeline,
             param_grid=config.decision_tree_param_grid,
             scoring=config.PRIMARY_SCORING,
-            cv=config.final_inner_cv,
+            cv=final_inner_cv,
             refit=True,
             n_jobs=-1,
             return_train_score=False,
@@ -798,11 +804,11 @@ def main() -> None:
         )
     elif best_model_family == "Random Forest":
         final_search = RandomizedSearchCV(
-            estimator=config.random_forest_pipeline,
+            estimator=random_forest_pipeline,
             param_distributions=config.random_forest_param_distributions,
             n_iter=config.N_RANDOM_ITERATIONS,
             scoring=config.PRIMARY_SCORING,
-            cv=config.final_inner_cv,
+            cv=final_inner_cv,
             refit=True,
             random_state=config.RANDOM_STATE,
             n_jobs=-1,

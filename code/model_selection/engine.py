@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+from functools import partial
 import json
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.inspection import permutation_importance
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier
 
+# Consistent Local Imports
 import config
 from utils import (
     compute_classification_metrics,
@@ -16,6 +21,44 @@ from utils import (
     select_rows,
 )
 
+# Use config.RANDOM_STATE consistently below
+outer_cv = StratifiedKFold(
+    n_splits=config.N_OUTER_SPLITS, 
+    shuffle=True, 
+    random_state=config.RANDOM_STATE
+)
+
+final_inner_cv = StratifiedKFold(
+    n_splits=config.N_INNER_SPLITS, 
+    shuffle=True, 
+    random_state=config.RANDOM_STATE
+)
+
+mutual_information = partial(
+    mutual_info_classif, 
+    discrete_features=True, 
+    random_state=config.RANDOM_STATE
+)
+
+decision_tree_pipeline = Pipeline(
+    steps=[
+        ("feature_selection", SelectKBest(score_func=mutual_information)),
+        ("classifier", DecisionTreeClassifier(random_state=config.RANDOM_STATE)),
+    ]
+)
+
+random_forest_pipeline = Pipeline(
+    steps=[
+        ("feature_selection", SelectKBest(score_func=mutual_information)),
+        (
+            "classifier",
+            RandomForestClassifier(
+                random_state=config.RANDOM_STATE,
+                n_jobs=1,  # The parent SearchCV handles parallel computation
+            ),
+        ),
+    ]
+)
 
 def _json_default(value: Any) -> Any:
     """Convert NumPy scalar values into standard Python values for JSON."""

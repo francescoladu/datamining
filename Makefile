@@ -19,6 +19,8 @@ REQUIREMENTS = requirements.txt
 
 .PHONY: all clean install analyze train explain setup dependencies help
 
+export PYTHONPATH := code
+
 # Default target displays the help menu
 all: help
 
@@ -30,6 +32,7 @@ help:
 	@echo "  make train     - Run nested CV, model family selection, and final test evaluation"
 	@echo "  make explain   - Run global and local explainability analysis (SHAP & Permutation Importance)"
 	@echo "  make clean     - Remove datasets, stamps, and all generated outputs"
+	@echo "  make demo      - Run the entire pipeline from setup to explainability"
 
 # Environment Setup
 setup: $(VENV)/bin/activate
@@ -84,6 +87,16 @@ train: $(CLEANED_TRAIN)
 explain: $(CLEANED_TRAIN)
 	@echo "Running Explainability pipeline..."
 	$(PYTHON) code/explainability/main.py
+
+demo: setup
+	@echo "Starting the end-to-end demonstration..."
+	$(MAKE) install
+	$(MAKE) analyze
+	$(MAKE) train
+	$(MAKE) explain
+	@echo "------------------------------------------------------------"
+	@echo "Demo complete! All pipeline stages executed successfully."
+	@echo "------------------------------------------------------------"
 
 clean:
 	@echo "Removing dataset files, stamps, and all generated outputs..."

@@ -1,15 +1,17 @@
 from pathlib import Path
 
+# Import global configurations from shared module
+from shared.config import (
+    DATA_DIR,
+    TARGET_COLUMN,
+    PHISHING_LABEL,
+    LEGITIMATE_LABEL,
+    RANDOM_STATE
+)
 
 # ============================================================
-# 1. PATHS
+# 1. DATASET SETTINGS
 # ============================================================
-
-# This file lives at code/data_preprocessing/config.py, so the
-# repository root is two levels up.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-DATA_DIR = PROJECT_ROOT / "data"
 
 # Both dataset splits are supported. The analysis can be run on
 # either split, or both, by iterating over this dict.
@@ -18,24 +20,12 @@ DATASET_PATHS = {
     # "test": DATA_DIR / "test_cleaned.csv",
 }
 
-
-# ============================================================
-# 2. DATASET SETTINGS
-# ============================================================
-
-TARGET_COLUMN = "Result"
-
 # Columns that may result from saving the DataFrame (e.g. an
 # extra index column written out by a previous export step).
 INDEX_COLUMNS = [
     "index",
     "Unnamed: 0",
 ]
-
-PHISHING_LABEL = -1
-LEGITIMATE_LABEL = 1
-
-RANDOM_STATE = 42
 
 # Number of Mutual-Information-ranked features included in the
 # Pearson correlation heatmap.
@@ -44,9 +34,8 @@ TOP_FEATURES_NUMBER = 15
 # Number of strongest correlations to export in CSV format.
 TOP_CORRELATIONS_NUMBER = 15
 
-
 # ============================================================
-# 3. OUTPUT FILES
+# 2. OUTPUT FILES
 # ============================================================
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
