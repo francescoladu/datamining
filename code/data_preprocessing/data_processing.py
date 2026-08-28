@@ -44,7 +44,6 @@ def load_clean_dataset(
 # ============================================================
 # 2. DATASET VALIDATION
 # ============================================================
-
 def validate_dataset(
     data: pd.DataFrame,
     target_column: str,
@@ -59,6 +58,24 @@ def validate_dataset(
     if target_column not in data.columns:
         raise ValueError(
             f"The target column '{target_column}' is not present."
+        )
+
+    allowed_labels = {
+        config.PHISHING_LABEL,
+        config.LEGITIMATE_LABEL,
+    }
+
+    actual_labels = set(
+        data[target_column].dropna().unique()
+    )
+
+    invalid_labels = actual_labels - allowed_labels
+
+    if invalid_labels:
+        raise ValueError(
+            f"The target column '{target_column}' contains invalid labels: "
+            f"{sorted(invalid_labels)}. "
+            f"Expected only {sorted(allowed_labels)}."
         )
 
     duplicated_columns = data.columns[
@@ -103,8 +120,6 @@ def validate_dataset(
             "Non-numeric columns found: "
             f"{non_numeric_features}"
         )
-
-
 # ============================================================
 # 3. FEATURE/TARGET SPLIT
 # ============================================================

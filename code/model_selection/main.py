@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.stats import binomtest, wilcoxon
+from scipy.stats import wilcoxon
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
 # Ensure the module directory is in sys.path so local siblings resolve correctly.
@@ -24,7 +24,13 @@ from engine import (
     outer_cv,
     final_inner_cv
 )
-from plots import plot_nested_cv_comparison
+from plots import (
+    plot_final_test_confusion_matrix,
+    plot_final_test_roc_curve,
+    plot_hyperparameter_optimization,
+    plot_nested_cv_comparison,
+    plot_selected_feature_ranking,
+)
 from utils import (
     compute_classification_metrics,
     predict_with_phishing_probability,
@@ -326,9 +332,8 @@ def build_model_disagreements(
 
 def compute_statistical_tests(
     nested_scores: pd.DataFrame,
-    disagreements: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Compute paired Wilcoxon and exact McNemar tests."""
+    """Compute the paired Wilcoxon signed-rank test."""
     rows: list[dict[str, Any]] = []
 
     fold_pivot = nested_scores.pivot(
@@ -369,52 +374,10 @@ def compute_statistical_tests(
                 "p_value": p_value,
                 "sample_size": len(paired),
                 "mean_paired_difference_rf_minus_dt": float(differences.mean()),
-                "discordant_dt_correct_rf_wrong": np.nan,
-                "discordant_dt_wrong_rf_correct": np.nan,
-            }
-        )
-
-    if not disagreements.empty:
-        dt_correct_rf_wrong = int(
-            (
-                disagreements["decision_tree_correct"]
-                & ~disagreements["random_forest_correct"]
-            ).sum()
-        )
-        dt_wrong_rf_correct = int(
-            (
-                ~disagreements["decision_tree_correct"]
-                & disagreements["random_forest_correct"]
-            ).sum()
-        )
-        discordant_total = dt_correct_rf_wrong + dt_wrong_rf_correct
-
-        if discordant_total:
-            p_value = float(
-                binomtest(
-                    min(dt_correct_rf_wrong, dt_wrong_rf_correct),
-                    n=discordant_total,
-                    p=0.5,
-                    alternative="two-sided",
-                ).pvalue
-            )
-        else:
-            p_value = 1.0
-
-        rows.append(
-            {
-                "test": "McNemar exact",
-                "statistic": min(dt_correct_rf_wrong, dt_wrong_rf_correct),
-                "p_value": p_value,
-                "sample_size": discordant_total,
-                "mean_paired_difference_rf_minus_dt": np.nan,
-                "discordant_dt_correct_rf_wrong": dt_correct_rf_wrong,
-                "discordant_dt_wrong_rf_correct": dt_wrong_rf_correct,
             }
         )
 
     return pd.DataFrame(rows)
-
 
 def compact_search_results(
     search: GridSearchCV | RandomizedSearchCV,
@@ -690,7 +653,6 @@ def main() -> None:
     model_disagreements = build_model_disagreements(oof_predictions)
     statistical_tests = compute_statistical_tests(
         nested_scores,
-        model_disagreements,
     )
 
     print("-" * 80)
@@ -858,6 +820,26 @@ def main() -> None:
         "final feature-selection results",
     )
 
+    # Report figure: final Mutual Information feature ranking.
+    feature_ranking_pdf = output_dir / "feature_selection_ranking.pdf"
+    plot_selected_feature_ranking(
+        selected_features=final_features,
+        output_pdf_path=feature_ranking_pdf,
+        max_display=15,
+    )
+    print(f"-> Generated feature-selection ranking: {feature_ranking_pdf.name}")
+
+    # Report figure: best hyperparameter-search candidates on the full
+    # development set. This uses development-CV scores only, never the test set.
+    hyperparameter_pdf = output_dir / "hyperparameter_optimization.pdf"
+    plot_hyperparameter_optimization(
+        search_results=final_search_table,
+        output_pdf_path=hyperparameter_pdf,
+        model_name=best_model_family,
+        max_candidates=15,
+    )
+    print(f"-> Generated hyperparameter-search chart: {hyperparameter_pdf.name}\n")
+
     # 11. Evaluate the held-out test set only for the final chosen experiment.
     if config.EVALUATE_FINAL_TEST:
         print("-" * 80)
@@ -894,6 +876,23 @@ def main() -> None:
             final_test_error_summary,
             output_dir / "final_test_error_summary.csv",
             "final test error summary",
+        )
+
+        confusion_matrix_pdf = output_dir / "final_test_confusion_matrix.pdf"
+        plot_final_test_confusion_matrix(
+            final_test_predictions=final_test_predictions,
+            output_pdf_path=confusion_matrix_pdf,
+        )
+        print(f"-> Generated final confusion matrix: {confusion_matrix_pdf.name}")
+
+        roc_curve_pdf = output_dir / "final_test_roc_curve.pdf"
+        final_roc_auc = plot_final_test_roc_curve(
+            final_test_predictions=final_test_predictions,
+            output_pdf_path=roc_curve_pdf,
+        )
+        print(
+            f"-> Generated final ROC curve: {roc_curve_pdf.name} "
+            f"(AUC={final_roc_auc:.4f})"
         )
 
         for metric_name, metric_value in final_test_metrics.items():

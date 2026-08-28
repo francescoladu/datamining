@@ -23,7 +23,7 @@ HIGH_CONFIDENCE_THRESHOLD = 0.80
 EVALUATE_FINAL_TEST = False
 
 # Cross Validation Split settings (To be passed into StratifiedKFold in engine.py)
-N_OUTER_SPLITS = 5
+N_OUTER_SPLITS = 10
 N_INNER_SPLITS = 5
 
 # ---------------------------------------------------------------------------
@@ -32,8 +32,8 @@ N_INNER_SPLITS = 5
 # Activate ONE line only. The same setting is applied to Decision Tree and
 # Random Forest, allowing fair comparisons on exactly the same outer folds.
 
-# FEATURE_SELECTION_K_VALUES = [5, 10, 15, 20, 25]  # Joint k search
-FEATURE_SELECTION_K_VALUES = ["all"]                # All 30 features
+FEATURE_SELECTION_K_VALUES = [5, 10, 15, 20, 25]  # Joint k search
+#FEATURE_SELECTION_K_VALUES = ["all"]  # Joint k search
 
 # ===========================================================================
 # 2. DECISION TREE SEARCH SPACE
