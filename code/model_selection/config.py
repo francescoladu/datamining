@@ -8,7 +8,7 @@ from shared.config import RANDOM_STATE
 PRIMARY_SCORING = "f1_macro"
 
 # Number of configurations sampled by RandomizedSearchCV for Random Forest.
-N_RANDOM_ITERATIONS = 1
+N_RANDOM_ITERATIONS = 40
 
 # Compute permutation importance on every untouched outer validation fold.
 COMPUTE_PERMUTATION_IMPORTANCE = True

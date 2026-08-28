@@ -283,7 +283,7 @@ def nested_cross_validation(
         y_outer_validation = select_rows(y, outer_validation_idx)
 
         inner_cv = StratifiedKFold(
-            n_splits=4,
+            n_splits=config.N_INNER_SPLITS,
             shuffle=True,
             random_state=config.RANDOM_STATE + outer_fold,
         )
