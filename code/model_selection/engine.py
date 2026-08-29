@@ -1,25 +1,22 @@
 from __future__ import annotations
 
-from functools import partial
 import json
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.inspection import permutation_importance
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
-from sklearn.tree import DecisionTreeClassifier
 
-# Consistent Local Imports
-import config
-from utils import (
+# Consistent project imports
+from model_selection import config
+from model_selection.utils import (
     compute_classification_metrics,
     predict_with_phishing_probability,
     select_rows,
 )
+from shared.modeling import build_pipeline
 
 # Use config.RANDOM_STATE consistently below
 outer_cv = StratifiedKFold(
@@ -34,31 +31,8 @@ final_inner_cv = StratifiedKFold(
     random_state=config.RANDOM_STATE
 )
 
-mutual_information = partial(
-    mutual_info_classif, 
-    discrete_features=True, 
-    random_state=config.RANDOM_STATE
-)
-
-decision_tree_pipeline = Pipeline(
-    steps=[
-        ("feature_selection", SelectKBest(score_func=mutual_information)),
-        ("classifier", DecisionTreeClassifier(random_state=config.RANDOM_STATE)),
-    ]
-)
-
-random_forest_pipeline = Pipeline(
-    steps=[
-        ("feature_selection", SelectKBest(score_func=mutual_information)),
-        (
-            "classifier",
-            RandomForestClassifier(
-                random_state=config.RANDOM_STATE,
-                n_jobs=1,  # The parent SearchCV handles parallel computation
-            ),
-        ),
-    ]
-)
+decision_tree_pipeline = build_pipeline("Decision Tree")
+random_forest_pipeline = build_pipeline("Random Forest")
 
 def _json_default(value: Any) -> Any:
     """Convert NumPy scalar values into standard Python values for JSON."""

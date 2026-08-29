@@ -17,11 +17,6 @@ PERMUTATION_N_REPEATS = 20
 # Threshold used to flag confidently wrong predictions in the error analysis.
 HIGH_CONFIDENCE_THRESHOLD = 0.80
 
-# IMPORTANT:
-# Keep this False while comparing different values of k. The held-out test set
-# must be evaluated only once, after the final experimental setup is chosen.
-EVALUATE_FINAL_TEST = False
-
 # Cross Validation Split settings (To be passed into StratifiedKFold in engine.py)
 N_OUTER_SPLITS = 10
 N_INNER_SPLITS = 5
@@ -29,11 +24,9 @@ N_INNER_SPLITS = 5
 # ---------------------------------------------------------------------------
 # FEATURE-SELECTION EXPERIMENT
 # ---------------------------------------------------------------------------
-# Activate ONE line only. The same setting is applied to Decision Tree and
-# Random Forest, allowing fair comparisons on exactly the same outer folds.
-
-FEATURE_SELECTION_K_VALUES = [5, 10, 15, 20, 25]  # Joint k search
-#FEATURE_SELECTION_K_VALUES = ["all"]  # Joint k search
+# Treat the number of selected features as an inner-CV hyperparameter.
+# Including "all" lets CV choose no feature reduction when that generalizes best.
+FEATURE_SELECTION_K_VALUES = [5, 10, 15, 20, 25, "all"]
 
 # ===========================================================================
 # 2. DECISION TREE SEARCH SPACE
