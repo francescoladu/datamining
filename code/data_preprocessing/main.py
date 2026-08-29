@@ -93,7 +93,7 @@ def main() -> None:
         print(f"-> Saved feature ranking: {mutual_information_path.name}")
         print(
             f"-> Selected {len(relevant_features)} features for the "
-            "Pearson heatmap."
+            "Spearman heatmap."
         )
         print(mutual_information.head(relevant_feature_count).to_string(index=False))
 
@@ -116,11 +116,11 @@ def main() -> None:
             f"{config.feature_histograms_dir(dataset_name).name}/"
         )
 
-        # 5. Second and only plot family: Pearson heatmap for relevant features.
-        print("\n[5/6] Computing Pearson correlations for relevant features...")
+        # 5. Second and only plot family: Spearman heatmap for relevant features.
+        print("\n[5/6] Computing Spearman correlations for relevant features...")
         relevant_X = X.loc[:, relevant_features]
         correlation_matrix = (
-            data_processing.calculate_pearson_correlation_matrix(relevant_X)
+            data_processing.calculate_spearman_correlation_matrix(relevant_X)
         )
         correlation_matrix_path = config.correlation_matrix_path(dataset_name)
         correlation_matrix.to_csv(correlation_matrix_path)
@@ -130,9 +130,9 @@ def main() -> None:
             pdf_path=config.correlation_heatmap_pdf_path(dataset_name),
             png_path=config.correlation_heatmap_png_path(dataset_name),
         )
-        print(f"-> Saved Pearson matrix: {correlation_matrix_path.name}")
+        print(f"-> Saved Spearman matrix: {correlation_matrix_path.name}")
         print(
-            "-> Generated Pearson heatmap: "
+            "-> Generated Spearman heatmap: "
             f"{config.correlation_heatmap_png_path(dataset_name).name}"
         )
 

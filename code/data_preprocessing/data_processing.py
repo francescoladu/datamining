@@ -116,10 +116,12 @@ def validate_dataset(
 
     if non_numeric_features:
         raise TypeError(
-            "Pearson correlation requires numeric features. "
+            "Spearman rank correlation requires numeric/ordinal encoded features. "
             "Non-numeric columns found: "
             f"{non_numeric_features}"
         )
+
+
 # ============================================================
 # 3. FEATURE/TARGET SPLIT
 # ============================================================
@@ -406,20 +408,20 @@ def calculate_mutual_information(
 
 
 # ============================================================
-# 8. PEARSON CORRELATION MATRIX
+# 8. SPEARMAN RANK CORRELATION MATRIX
 # ============================================================
 
-def calculate_pearson_correlation_matrix(
+def calculate_spearman_correlation_matrix(
     X: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Calculate the Pearson correlation matrix between all
-    predictive features.
+    Calculate the Spearman rank correlation matrix between all
+    predictive features (suited for ordinal {-1, 0, 1} variables).
 
     The target variable must already have been excluded from X.
     """
     correlation_matrix = X.corr(
-        method="pearson"
+        method="spearman"
     )
 
     return correlation_matrix
@@ -435,7 +437,7 @@ def find_strongest_correlations(
 ) -> pd.DataFrame:
     """
     Return the feature pairs with the highest absolute
-    correlation.
+    Spearman correlation.
 
     Excludes:
     - the diagonal;
@@ -468,7 +470,7 @@ def find_strongest_correlations(
                 {
                     "Feature 1": first_feature,
                     "Feature 2": second_feature,
-                    "Pearson correlation": correlation,
+                    "Spearman correlation": correlation,
                     "Absolute correlation": abs(correlation),
                 }
             )
@@ -478,7 +480,7 @@ def find_strongest_correlations(
             columns=[
                 "Feature 1",
                 "Feature 2",
-                "Pearson correlation",
+                "Spearman correlation",
                 "Absolute correlation",
             ]
         )

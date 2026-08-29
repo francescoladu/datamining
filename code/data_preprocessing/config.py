@@ -28,7 +28,7 @@ INDEX_COLUMNS = [
 ]
 
 # Number of Mutual-Information-ranked features included in the
-# Pearson correlation heatmap.
+# Spearman correlation heatmap.
 TOP_FEATURES_NUMBER = 15
 
 # Number of strongest correlations to export in CSV format.
@@ -47,15 +47,15 @@ def feature_histograms_dir(dataset_name: str) -> Path:
 
 
 def correlation_matrix_path(dataset_name: str) -> Path:
-    """CSV path for the Pearson matrix of the most relevant features."""
-    return OUTPUT_DIR / f"pearson_correlation_matrix_top_features_{dataset_name}.csv"
+    """CSV path for the Spearman matrix of the most relevant features."""
+    return OUTPUT_DIR / f"spearman_correlation_matrix_top_features_{dataset_name}.csv"
 
 
 def correlation_heatmap_pdf_path(dataset_name: str) -> Path:
-    """PDF path for the Pearson heatmap of the most relevant features."""
-    return OUTPUT_DIR / f"pearson_correlation_heatmap_top_features_{dataset_name}.pdf"
+    """PDF path for the Spearman heatmap of the most relevant features."""
+    return OUTPUT_DIR / f"spearman_correlation_heatmap_top_features_{dataset_name}.pdf"
 
 
 def correlation_heatmap_png_path(dataset_name: str) -> Path:
-    """PNG path for the Pearson heatmap of the most relevant features."""
-    return OUTPUT_DIR / f"pearson_correlation_heatmap_top_features_{dataset_name}.png"
+    """PNG path for the Spearman heatmap of the most relevant features."""
+    return OUTPUT_DIR / f"spearman_correlation_heatmap_top_features_{dataset_name}.png"

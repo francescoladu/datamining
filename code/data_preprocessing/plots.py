@@ -204,7 +204,7 @@ def plot_feature_histograms_by_class(
 
 
 # ============================================================
-# 3. PEARSON CORRELATION HEATMAP
+# 3. SPEARMAN CORRELATION HEATMAP
 # ============================================================
 
 def plot_correlation_heatmap(
@@ -213,7 +213,7 @@ def plot_correlation_heatmap(
     png_path: Path,
 ) -> None:
     """
-    Generate a Pearson correlation heatmap containing only the
+    Generate a Spearman correlation heatmap containing only the
     most relevant predictive features.
     """
     if correlation_matrix.empty:
@@ -242,19 +242,19 @@ def plot_correlation_heatmap(
         cmap="coolwarm",
         vmin=-1,
         vmax=1,
-        annot=number_of_features <= 12,
+        annot=number_of_features <= 15,
         fmt=".2f",
         linewidths=0.5,
         square=True,
         cbar_kws={
-            "label": "Pearson correlation",
+            "label": "Spearman rank correlation ($\\rho$)",
             "shrink": 0.8,
         },
         ax=axis,
     )
 
     axis.set_title(
-        "Pearson correlation heatmap of the most relevant features",
+        "Spearman rank correlation heatmap of the most relevant features",
         pad=18,
     )
 
