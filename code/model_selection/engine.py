@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import numpy as np
@@ -33,64 +32,6 @@ final_inner_cv = StratifiedKFold(
 
 decision_tree_pipeline = build_pipeline("Decision Tree")
 random_forest_pipeline = build_pipeline("Random Forest")
-
-def _json_default(value: Any) -> Any:
-    """Convert NumPy scalar values into standard Python values for JSON."""
-    if isinstance(value, np.generic):
-        return value.item()
-    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
-
-
-def _parameter_columns(parameters: dict[str, Any]) -> dict[str, Any]:
-    """Flatten a SearchCV parameter dictionary into CSV-friendly columns."""
-    return {
-        parameter_name: parameter_value
-        for parameter_name, parameter_value in parameters.items()
-    }
-
-
-def _extract_feature_rows(
-    *,
-    model_name: str,
-    outer_fold: int,
-    fitted_pipeline: Pipeline,
-    feature_names: list[str],
-) -> list[dict[str, Any]]:
-    """Extract MI scores, ranks, and selection status for every input feature."""
-    selector = fitted_pipeline.named_steps["feature_selection"]
-    selected_mask = np.asarray(selector.get_support(), dtype=bool)
-    scores = np.asarray(selector.scores_, dtype=float)
-
-    # Highest Mutual Information score receives rank 1.
-    ranks = (
-        pd.Series(scores)
-        .rank(method="min", ascending=False, na_option="bottom")
-        .astype(int)
-        .to_numpy()
-    )
-
-    selected_k = selector.k
-    selected_feature_count = int(selected_mask.sum())
-
-    return [
-        {
-            "model": model_name,
-            "outer_fold": outer_fold,
-            "selected_k": selected_k,
-            "selected_feature_count": selected_feature_count,
-            "feature": feature_name,
-            "mutual_information_score": float(score),
-            "mutual_information_rank": int(rank),
-            "selected": bool(is_selected),
-        }
-        for feature_name, score, rank, is_selected in zip(
-            feature_names,
-            scores,
-            ranks,
-            selected_mask,
-        )
-    ]
-
 
 def _extract_prediction_rows(
     *,
@@ -163,56 +104,6 @@ def _extract_prediction_rows(
     return prediction_rows
 
 
-def _extract_search_rows(
-    *,
-    model_name: str,
-    outer_fold: int,
-    search: GridSearchCV | RandomizedSearchCV,
-) -> pd.DataFrame:
-    """Convert the complete inner SearchCV results into a compact DataFrame."""
-    results = pd.DataFrame(search.cv_results_).copy()
-    results.insert(0, "candidate_id", np.arange(1, len(results) + 1))
-    results.insert(0, "outer_fold", outer_fold)
-    results.insert(0, "model", model_name)
-
-    if "params" in results.columns:
-        results["params"] = results["params"].map(
-            lambda value: json.dumps(
-                value,
-                sort_keys=True,
-                default=_json_default,
-            )
-        )
-
-    preferred_columns = [
-        "model",
-        "outer_fold",
-        "candidate_id",
-        "rank_test_score",
-        "mean_test_score",
-        "std_test_score",
-        "mean_fit_time",
-        "std_fit_time",
-        "mean_score_time",
-        "std_score_time",
-        "params",
-    ]
-    parameter_columns = sorted(
-        column for column in results.columns if column.startswith("param_")
-    )
-    split_columns = sorted(
-        column
-        for column in results.columns
-        if column.startswith("split") and column.endswith("_test_score")
-    )
-    available_columns = [
-        column
-        for column in preferred_columns + parameter_columns + split_columns
-        if column in results.columns
-    ]
-    return results[available_columns]
-
-
 def nested_cross_validation(
     *,
     model_name: str,
@@ -227,8 +118,7 @@ def nested_cross_validation(
     """
     Run nested stratified cross-validation and return analysis-ready tables.
 
-    Returned tables include fold-level metrics, best parameters, selected
-    features, out-of-fold predictions, all inner-search candidates, and
+    Returned tables include fold-level metrics, out-of-fold predictions, and
     permutation importance measured on untouched outer validation folds.
     """
     if not hasattr(X, "columns"):
@@ -239,10 +129,7 @@ def nested_cross_validation(
     feature_names = list(X.columns)
 
     fold_results: list[dict[str, Any]] = []
-    selected_configurations: list[dict[str, Any]] = []
-    feature_rows: list[dict[str, Any]] = []
     prediction_rows: list[dict[str, Any]] = []
-    search_result_frames: list[pd.DataFrame] = []
     permutation_rows: list[dict[str, Any]] = []
 
     for outer_fold, (outer_train_idx, outer_validation_idx) in enumerate(
@@ -313,26 +200,6 @@ def nested_cross_validation(
             }
         )
 
-        selected_configurations.append(
-            {
-                "model": model_name,
-                "outer_fold": outer_fold,
-                "best_inner_score": float(inner_search.best_score_),
-                "selected_k": selected_k,
-                "selected_feature_count": selected_feature_count,
-                **_parameter_columns(inner_search.best_params_),
-            }
-        )
-
-        feature_rows.extend(
-            _extract_feature_rows(
-                model_name=model_name,
-                outer_fold=outer_fold,
-                fitted_pipeline=best_pipeline,
-                feature_names=feature_names,
-            )
-        )
-
         prediction_rows.extend(
             _extract_prediction_rows(
                 model_name=model_name,
@@ -341,14 +208,6 @@ def nested_cross_validation(
                 X_outer_validation=X_outer_validation,
                 y_outer_validation=y_outer_validation,
                 outer_validation_idx=outer_validation_idx,
-            )
-        )
-
-        search_result_frames.append(
-            _extract_search_rows(
-                model_name=model_name,
-                outer_fold=outer_fold,
-                search=inner_search,
             )
         )
 
@@ -389,12 +248,6 @@ def nested_cross_validation(
 
     return {
         "fold_scores": pd.DataFrame(fold_results),
-        "best_parameters": pd.DataFrame(selected_configurations),
-        "selected_features": pd.DataFrame(feature_rows),
         "oof_predictions": pd.DataFrame(prediction_rows),
-        "inner_search_results": pd.concat(
-            search_result_frames,
-            ignore_index=True,
-        ),
         "permutation_importance": pd.DataFrame(permutation_rows),
     }

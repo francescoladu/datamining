@@ -9,16 +9,15 @@ import shap
 from scipy import sparse
 from sklearn.pipeline import Pipeline
 
-from config import (
+from explainability.config import (
     CLASS_TO_EXPLAIN,
-    OUTPUT_DIR,
+    LOCAL_OUTPUT_DIR,
     PLOT_DPI,
     RANDOM_STATE,
     SAMPLE_POSITION,
     SAVE_PDF,
-    SAVE_PNG,
     SHAP_BACKGROUND_SIZE,
-    create_output_directory,
+    create_output_directories,
 )
 
 
@@ -377,29 +376,24 @@ def run_shap_force(
         }
     )
 
-    create_output_directory()
+    create_output_directories()
 
     suffix = (
         f"sample_{sample_position:04d}"
     )
 
     contributions_path = (
-        OUTPUT_DIR
+        LOCAL_OUTPUT_DIR
         / f"shap_local_contributions_{suffix}.csv"
     )
 
     summary_path = (
-        OUTPUT_DIR
+        LOCAL_OUTPUT_DIR
         / f"shap_prediction_summary_{suffix}.csv"
     )
 
-    png_path = (
-        OUTPUT_DIR
-        / f"shap_force_{suffix}.png"
-    )
-
     pdf_path = (
-        OUTPUT_DIR
+        LOCAL_OUTPUT_DIR
         / f"shap_force_{suffix}.pdf"
     )
 
@@ -437,13 +431,6 @@ def run_shap_force(
         "Local SHAP Explanation — P(phishing | x)",
         pad=25,
     )
-
-    if SAVE_PNG:
-        figure.savefig(
-            png_path,
-            dpi=PLOT_DPI,
-            bbox_inches="tight",
-        )
 
     if SAVE_PDF:
         figure.savefig(
@@ -518,12 +505,6 @@ def run_shap_force(
         f"\n{summary_path}"
     )
 
-    if SAVE_PNG:
-        print(
-            "\nSHAP force plot PNG saved to:"
-            f"\n{png_path}"
-        )
-
     if SAVE_PDF:
         print(
             "\nSHAP force plot PDF saved to:"
@@ -533,10 +514,5 @@ def run_shap_force(
     return {
         "contributions": contributions_df,
         "summary": summary_df,
-        "png_path": (
-            png_path if SAVE_PNG else None
-        ),
-        "pdf_path": (
-            pdf_path if SAVE_PDF else None
-        ),
+        "pdf_path": pdf_path if SAVE_PDF else None,
     }

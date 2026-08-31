@@ -18,11 +18,9 @@ DEFAULT_DPI = 300
 def _save_figure(
     figure: plt.Figure,
     output_pdf_path: str | Path,
-) -> tuple[Path, Path]:
-    """Save a report figure in both vector PDF and high-resolution PNG."""
+) -> Path:
+    """Save the report-ready vector PDF without a redundant PNG copy."""
     pdf_path = Path(output_pdf_path)
-    png_path = pdf_path.with_suffix(".png")
-
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
 
     figure.savefig(
@@ -30,14 +28,8 @@ def _save_figure(
         format="pdf",
         bbox_inches="tight",
     )
-    figure.savefig(
-        png_path,
-        format="png",
-        dpi=DEFAULT_DPI,
-        bbox_inches="tight",
-    )
 
-    return pdf_path, png_path
+    return pdf_path
 
 
 def plot_nested_cv_comparison(

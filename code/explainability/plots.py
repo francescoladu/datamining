@@ -3,21 +3,19 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from config import (
+from explainability.config import (
     PERMUTATION_MAX_DISPLAY,
     PERMUTATION_PDF_PATH,
-    PERMUTATION_PNG_PATH,
     PLOT_DPI,
     SAVE_PDF,
-    SAVE_PNG,
-    create_output_directory,
+    create_output_directories,
 )
 
 
 def run_permutation_importance_plot(
     importance_df: pd.DataFrame,
     max_display: int | None = PERMUTATION_MAX_DISPLAY,
-) -> tuple[Path | None, Path | None]:
+) -> Path | None:
     """
     Create and save a horizontal permutation importance plot.
 
@@ -61,7 +59,7 @@ def run_permutation_importance_plot(
         ascending=True,
     )
 
-    create_output_directory()
+    create_output_directories()
 
     figure_height = max(
         5.0,
@@ -109,33 +107,16 @@ def run_permutation_importance_plot(
 
     figure.tight_layout()
 
-    png_path: Path | None = None
     pdf_path: Path | None = None
-
-    if SAVE_PNG:
-        figure.savefig(
-            PERMUTATION_PNG_PATH,
-            dpi=PLOT_DPI,
-            bbox_inches="tight",
-        )
-
-        png_path = PERMUTATION_PNG_PATH
 
     if SAVE_PDF:
         figure.savefig(
             PERMUTATION_PDF_PATH,
             bbox_inches="tight",
         )
-
         pdf_path = PERMUTATION_PDF_PATH
 
     plt.close(figure)
-
-    if png_path is not None:
-        print(
-            "\nPermutation plot PNG saved to:"
-            f"\n{png_path}"
-        )
 
     if pdf_path is not None:
         print(
@@ -143,4 +124,4 @@ def run_permutation_importance_plot(
             f"\n{pdf_path}"
         )
 
-    return png_path, pdf_path
+    return pdf_path

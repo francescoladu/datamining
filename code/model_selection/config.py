@@ -7,9 +7,6 @@ from shared.config import RANDOM_STATE
 
 PRIMARY_SCORING = "f1_macro"
 
-# Number of configurations sampled by RandomizedSearchCV for Random Forest.
-N_RANDOM_ITERATIONS = 40
-
 # Compute permutation importance on every untouched outer validation fold.
 COMPUTE_PERMUTATION_IMPORTANCE = True
 PERMUTATION_N_REPEATS = 20
@@ -18,7 +15,7 @@ PERMUTATION_N_REPEATS = 20
 HIGH_CONFIDENCE_THRESHOLD = 0.80
 
 # Cross Validation Split settings (To be passed into StratifiedKFold in engine.py)
-N_OUTER_SPLITS = 10
+N_OUTER_SPLITS = 5
 N_INNER_SPLITS = 5
 
 # ---------------------------------------------------------------------------
@@ -26,7 +23,14 @@ N_INNER_SPLITS = 5
 # ---------------------------------------------------------------------------
 # Treat the number of selected features as an inner-CV hyperparameter.
 # Including "all" lets CV choose no feature reduction when that generalizes best.
-FEATURE_SELECTION_K_VALUES = [5, 10, 15, 20, 25, "all"]
+
+#FEATURE_SELECTION_K_VALUES = ["all"]
+FEATURE_SELECTION_K_VALUES = [5, 10, 15, 20, 25]
+
+
+# Number of configurations sampled by RandomizedSearchCV for Random Forest.
+N_RANDOM_ITERATIONS = 30 * len(FEATURE_SELECTION_K_VALUES)
+
 
 # ===========================================================================
 # 2. DECISION TREE SEARCH SPACE

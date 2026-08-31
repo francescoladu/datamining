@@ -1,4 +1,5 @@
 import ast
+import sys
 
 from functools import partial
 from pathlib import Path
@@ -14,7 +15,12 @@ from sklearn.feature_selection import (
 from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier
 
-from config import (
+module_dir = Path(__file__).resolve().parent
+code_dir = module_dir.parent
+if str(code_dir) not in sys.path:
+    sys.path.insert(0, str(code_dir))
+
+from explainability.config import (
     CLASS_TO_EXPLAIN,
     EXPECTED_LABELS,
     FINAL_BEST_PARAMETERS_PATH,
@@ -24,15 +30,15 @@ from config import (
     TARGET_COLUMN,
     TEST_DATA_PATH,
     TRAIN_DATA_PATH,
-    create_output_directory,
+    create_output_directories,
 )
-from permutation_importance import (
+from explainability.permutation_importance import (
     run_permutation_importance,
 )
-from plots import (
+from explainability.plots import (
     run_permutation_importance_plot,
 )
-from shap_force import (
+from explainability.shap_force import (
     run_shap_force,
 )
 
@@ -321,7 +327,7 @@ def rebuild_final_model(
 def main() -> None:
     """Run global and local explainability."""
 
-    create_output_directory()
+    create_output_directories()
 
     (
         X_train,

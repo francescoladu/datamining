@@ -25,3 +25,9 @@ EXPECTED_LABELS: Final[set[int]] = {
 
 # Shared random seed for reproducibility across all modules
 RANDOM_STATE: Final[int] = 42
+
+# ============================================================
+# 3. SELECTED MODEL-SELECTION RUN
+# ============================================================
+# Change only this line when the definitive run is chosen.
+SELECTED_RUN_NAME: Final[str] = "k_search_5-10-15-20-25"

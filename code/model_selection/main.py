@@ -18,7 +18,6 @@ from model_selection import config
 from model_selection.diagnostics import (
     build_error_by_feature_value,
     build_error_summary,
-    build_model_disagreements,
 )
 from model_selection.engine import (
     decision_tree_pipeline,
@@ -34,9 +33,7 @@ from model_selection.plots import (
     plot_selected_feature_ranking,
 )
 from model_selection.summaries import (
-    compute_feature_stability,
     compute_statistical_tests,
-    summarize_feature_frequency,
     summarize_permutation_importance,
 )
 from shared.config import DATA_DIR
@@ -290,28 +287,19 @@ def main() -> None:
 
     model_results = [decision_tree_results, random_forest_results]
     nested_scores = combine_result_tables(model_results, "fold_scores")
-    best_parameters = combine_result_tables(model_results, "best_parameters")
-    selected_features = combine_result_tables(model_results, "selected_features")
     oof_predictions = combine_result_tables(model_results, "oof_predictions")
-    inner_search_results = combine_result_tables(
-        model_results,
-        "inner_search_results",
-    )
     permutation_scores = combine_result_tables(
         model_results,
         "permutation_importance",
     )
 
     nested_summary = build_nested_summary(nested_scores)
-    feature_frequency = summarize_feature_frequency(selected_features)
-    feature_stability = compute_feature_stability(selected_features)
     permutation_summary = summarize_permutation_importance(permutation_scores)
     error_summary = build_error_summary(oof_predictions)
     error_by_feature_value = build_error_by_feature_value(
         oof_predictions,
         X_dev,
     )
-    model_disagreements = build_model_disagreements(oof_predictions)
     statistical_tests = compute_statistical_tests(nested_scores)
 
     print("-" * 80)
@@ -337,33 +325,6 @@ def main() -> None:
     )
 
     save_csv(
-        best_parameters,
-        paths.hyperparameter_search / "best_parameters_by_fold.csv",
-        "best parameters by outer fold",
-    )
-    save_csv(
-        inner_search_results,
-        paths.hyperparameter_raw / "inner_search_results.csv",
-        "all inner-search candidates",
-    )
-
-    save_csv(
-        selected_features,
-        paths.feature_selection / "selected_features_by_fold.csv",
-        "feature-selection details by outer fold",
-    )
-    save_csv(
-        feature_frequency,
-        paths.feature_selection / "feature_frequency.csv",
-        "feature-selection frequencies",
-    )
-    save_csv(
-        feature_stability,
-        paths.feature_selection / "feature_stability.csv",
-        "feature-subset stability",
-    )
-
-    save_csv(
         oof_predictions,
         paths.diagnostics / "oof_predictions.csv",
         "out-of-fold predictions",
@@ -378,18 +339,7 @@ def main() -> None:
         paths.diagnostics / "error_by_feature_value.csv",
         "error rates by feature value",
     )
-    save_csv(
-        model_disagreements,
-        paths.diagnostics / "model_disagreements.csv",
-        "paired model disagreements",
-    )
-
     if not permutation_scores.empty:
-        save_csv(
-            permutation_scores,
-            paths.explainability_raw / "permutation_importance.csv",
-            "permutation importance by outer fold",
-        )
         save_csv(
             permutation_summary,
             paths.explainability / "permutation_importance_summary.csv",
@@ -483,8 +433,8 @@ def main() -> None:
             nested_summary.loc[best_model_family, "macro_f1_std"]
         ),
         "wilcoxon_p_value": wilcoxon_p_value,
-        "final_best_parameters_path": str(
-            paths.hyperparameter_search / "final_best_parameters.csv"
+        "final_best_parameters_path": (
+            "hyperparameter_search/final_best_parameters.csv"
         ),
     }
     save_json(
