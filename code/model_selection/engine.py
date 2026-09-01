@@ -13,6 +13,7 @@ from model_selection import config
 from model_selection.utils import (
     compute_classification_metrics,
     predict_with_phishing_probability,
+    select_by_one_se_rule,
     select_rows,
 )
 from shared.modeling import build_pipeline
@@ -155,7 +156,7 @@ def nested_cross_validation(
                 param_grid=search_space,
                 scoring=config.PRIMARY_SCORING,
                 cv=inner_cv,
-                refit=True,
+                refit=select_by_one_se_rule,
                 n_jobs=-1,
                 return_train_score=False,
                 error_score="raise",
@@ -167,7 +168,7 @@ def nested_cross_validation(
                 n_iter=n_random_iterations,
                 scoring=config.PRIMARY_SCORING,
                 cv=inner_cv,
-                refit=True,
+                refit=select_by_one_se_rule,
                 random_state=config.RANDOM_STATE + outer_fold,
                 n_jobs=-1,
                 return_train_score=False,

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from code.model_selection.utils import select_by_one_se_rule
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
@@ -185,7 +186,7 @@ def create_final_search(
             param_grid=config.decision_tree_param_grid,
             scoring=config.PRIMARY_SCORING,
             cv=final_inner_cv,
-            refit=True,
+            refit=select_by_one_se_rule,
             n_jobs=-1,
             return_train_score=False,
             error_score="raise",
@@ -197,7 +198,7 @@ def create_final_search(
             n_iter=config.N_RANDOM_ITERATIONS,
             scoring=config.PRIMARY_SCORING,
             cv=final_inner_cv,
-            refit=True,
+            refit=select_by_one_se_rule,
             random_state=config.RANDOM_STATE,
             n_jobs=-1,
             return_train_score=False,
