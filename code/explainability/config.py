@@ -44,7 +44,7 @@ PERMUTATION_SUMMARY_SOURCE_PATH: Final[Path] = (
 PLOT_DPI: Final[int] = 300
 SAVE_PNG: Final[bool] = False
 SAVE_PDF: Final[bool] = True
-PERMUTATION_MAX_DISPLAY: Final[int | None] = None
+PERMUTATION_MAX_DISPLAY: Final[int | None] = 10
 PERMUTATION_PDF_PATH: Final[Path] = (
     GLOBAL_OUTPUT_DIR / "permutation_importance.pdf"
 )

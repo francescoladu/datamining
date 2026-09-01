@@ -407,7 +407,7 @@ def run_shap_force(
         index=False,
     )
 
-    shap.force_plot(
+    figure = shap.force_plot(
         base_value=baseline,
         shap_values=contributions,
         features=(
@@ -416,20 +416,46 @@ def run_shap_force(
             .to_numpy()
         ),
         feature_names=selected_features,
+        out_names="P(phishing)",
         matplotlib=True,
         show=False,
+        figsize=(14, 3.8),
+        text_rotation=10,
+        contribution_threshold=0.10,
     )
 
-    figure = plt.gcf()
+    axis = figure.axes[0]
 
-    figure.set_size_inches(
-        14,
-        3.5,
+    # Remove SHAP's default "higher / lower" labels.
+    for text in list(axis.texts):
+        label = text.get_text().lower()
+
+        if "higher" in label or "lower" in label:
+            text.remove()
+
+    # Add centered direction labels.
+    axis.text(
+        0.495,
+        1.15,
+        "higher →",
+        transform=axis.transAxes,
+        ha="right",
+        va="center",
+        fontsize=13,
+        color="#ff0051",
+        clip_on=False,
     )
 
-    plt.title(
-        "Local SHAP Explanation — P(phishing | x)",
-        pad=25,
+    axis.text(
+        0.505,
+        1.15,
+        "← lower",
+        transform=axis.transAxes,
+        ha="left",
+        va="center",
+        fontsize=13,
+        color="#1e88e5",
+        clip_on=False,
     )
 
     if SAVE_PDF:

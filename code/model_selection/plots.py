@@ -9,6 +9,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import seaborn as sns
+
 from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
 
 
@@ -41,82 +43,157 @@ def plot_nested_cv_comparison(
     ),
 ) -> None:
     """
-    Compare model families using the outer-fold macro F1-scores.
+    Plot outer-fold macro F1-scores using a standard Tukey boxplot.
 
-    The boxplots summarize the score distributions while the overlaid points
-    preserve the individual outer-fold results. This plot is intended for the
-    report's model-comparison figure.
+    Boxes represent Q1--Q3, the central line is the median,
+    whiskers extend to 1.5 * IQR, and observations outside
+    the whiskers are shown as outliers.
     """
-    required_columns = {"model", "outer_fold", "macro_f1"}
-    missing_columns = required_columns.difference(nested_scores.columns)
+    required_columns = {
+        "model",
+        "outer_fold",
+        "macro_f1",
+    }
+
+    missing_columns = required_columns.difference(
+        nested_scores.columns
+    )
+
     if nested_scores.empty or missing_columns:
         raise ValueError(
             "Invalid nested_scores DataFrame. "
             f"Missing columns: {sorted(missing_columns)}"
         )
 
-    boxplot_values = [
-        (
-            nested_scores.loc[
-                nested_scores["model"] == model_name,
-                "macro_f1",
-            ]
-            .astype(float)
-            .to_numpy()
-        )
-        for model_name in model_order
-    ]
+    plot_df = nested_scores.loc[
+        nested_scores["model"].isin(model_order),
+        ["model", "outer_fold", "macro_f1"],
+    ].copy()
 
-    if any(len(values) == 0 for values in boxplot_values):
-        raise ValueError("Every model in model_order must have at least one score.")
+    plot_df["macro_f1"] = (
+        plot_df["macro_f1"]
+        .astype(float)
+    )
 
-    figure, axis = plt.subplots(figsize=(6.4, 4.4))
+    for model_name in model_order:
+        if not (
+            plot_df["model"] == model_name
+        ).any():
+            raise ValueError(
+                f"No scores found for model: {model_name}"
+            )
 
-    axis.boxplot(
-        boxplot_values,
-        widths=0.42,
+    model_palette = {
+        "Decision Tree": "#4C78A8",
+        "Random Forest": "#F58518",
+    }
+
+    figure, axis = plt.subplots(
+        figsize=(6.4, 4.3)
+    )
+
+    sns.boxplot(
+        data=plot_df,
+        x="model",
+        y="macro_f1",
+        hue="model",
+        order=list(model_order),
+        hue_order=list(model_order),
+        palette=model_palette,
+
+        width=0.42,
+
+        # Standard Tukey whiskers
+        whis=1.5,
+
         showmeans=False,
-        showfliers=False,
+
+        # Show observations outside 1.5 * IQR
+        showfliers=True,
+
+        saturation=0.85,
+        linewidth=1.4,
+
+        boxprops={
+            "edgecolor": "black",
+        },
+
+        whiskerprops={
+            "color": "black",
+            "linewidth": 1.3,
+        },
+
+        capprops={
+            "color": "black",
+            "linewidth": 1.3,
+        },
+
+        medianprops={
+            "color": "black",
+            "linewidth": 2.0,
+        },
+
+        flierprops={
+            "marker": "o",
+            "markerfacecolor": "white",
+            "markeredgecolor": "black",
+            "markeredgewidth": 1.2,
+            "markersize": 5.5,
+            "linestyle": "none",
+        },
+
+        legend=False,
+        ax=axis,
     )
 
-    for position, values in enumerate(boxplot_values, start=1):
-        # Deterministic small horizontal offsets avoid hiding overlapping dots.
-        offsets = np.linspace(-0.065, 0.065, num=len(values))
-        axis.scatter(
-            np.full(len(values), position, dtype=float) + offsets,
-            values,
-            s=34,
-            zorder=3,
-            alpha=0.85,
-        )
-
-    all_values = np.concatenate(boxplot_values)
-    score_range = float(all_values.max() - all_values.min())
-    margin = max(0.004, score_range * 0.15)
-
-    model_labels = [
-        (
-            f"{model_name}\n"
-            f"mean {np.mean(values):.3f} ± {np.std(values, ddof=1):.3f}"
-        )
-        for model_name, values in zip(model_order, boxplot_values)
-    ]
-    axis.set_xticks(
-        np.arange(1, len(model_order) + 1),
-        model_labels,
+    all_values = (
+        plot_df["macro_f1"]
+        .to_numpy(dtype=float)
     )
-    axis.set_ylabel("Outer-fold macro F1-score")
-    axis.set_xlabel("")
+
+    score_range = float(
+        all_values.max() - all_values.min()
+    )
+
+    margin = max(
+        0.004,
+        score_range * 0.08,
+    )
+
     axis.set_ylim(
         float(all_values.min() - margin),
         float(all_values.max() + margin),
     )
-    axis.grid(axis="y", alpha=0.22)
+
+    axis.set_xlabel("")
+
+    axis.set_ylabel(
+        "Outer-fold macro F1-score"
+    )
+
+    axis.grid(
+        axis="y",
+        alpha=0.16,
+        linewidth=0.7,
+    )
+
+    axis.grid(
+        axis="x",
+        visible=False,
+    )
+
+    axis.set_axisbelow(True)
+
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
 
     figure.tight_layout()
-    _save_figure(figure, output_pdf_path)
+
+    _save_figure(
+        figure,
+        output_pdf_path,
+    )
+
     plt.close(figure)
 
 
@@ -124,7 +201,7 @@ def plot_selected_feature_ranking(
     selected_features: pd.DataFrame,
     output_pdf_path: str | Path,
     *,
-    max_display: int = 15,
+    max_display: int = 10,
 ) -> None:
     """
     Plot the Mutual Information ranking fitted on the full development set.
@@ -198,80 +275,230 @@ def plot_hyperparameter_optimization(
     max_candidates: int = 15,
 ) -> None:
     """
-    Plot the best SearchCV candidates ranked by mean inner-CV macro F1.
+    Plot a 2D hyperparameter-search heatmap.
 
-    Error bars show the standard deviation across inner folds. Candidate labels
-    also report k when feature_selection__k is part of the search space.
+    Each cell reports the best mean inner-CV macro F1-score obtained
+    among the sampled candidates sharing the corresponding values of
+    feature_selection__k and classifier__max_depth.
     """
     required_columns = {
-        "candidate_id",
-        "rank_test_score",
         "mean_test_score",
-        "std_test_score",
+        "param_feature_selection__k",
+        "param_classifier__max_depth",
     }
-    missing_columns = required_columns.difference(search_results.columns)
+
+    missing_columns = required_columns.difference(
+        search_results.columns
+    )
+
     if search_results.empty or missing_columns:
         raise ValueError(
             "Invalid search_results DataFrame. "
             f"Missing columns: {sorted(missing_columns)}"
         )
-    if max_candidates <= 0:
-        raise ValueError("max_candidates must be positive.")
 
-    plot_df = (
-        search_results
-        .copy()
-        .sort_values(
-            ["rank_test_score", "mean_test_score"],
-            ascending=[True, False],
+    plot_df = search_results.copy()
+
+    # --------------------------------------------------------
+    # Clean k values
+    # --------------------------------------------------------
+
+    plot_df["k"] = (
+        plot_df["param_feature_selection__k"]
+        .astype(str)
+    )
+
+    # --------------------------------------------------------
+    # Clean max_depth values
+    # NaN corresponds to max_depth=None
+    # --------------------------------------------------------
+
+    plot_df["max_depth"] = (
+        plot_df["param_classifier__max_depth"]
+        .apply(
+            lambda value: (
+                "None"
+                if pd.isna(value)
+                else str(int(float(value)))
+            )
         )
-        .head(max_candidates)
-        .sort_values("mean_test_score", ascending=True)
     )
 
-    k_column = "param_feature_selection__k"
-    labels: list[str] = []
-    for _, row in plot_df.iterrows():
-        label = f"candidate #{int(row['candidate_id'])}"
-        if k_column in plot_df.columns:
-            label += f"  |  k={row[k_column]}"
-        labels.append(label)
+    # --------------------------------------------------------
+    # For each (k, max_depth) combination, keep the best
+    # mean inner-CV score found by the randomized search.
+    # --------------------------------------------------------
 
-    mean_scores = plot_df["mean_test_score"].astype(float).to_numpy()
-    std_scores = plot_df["std_test_score"].astype(float).to_numpy()
-    y_positions = np.arange(len(plot_df))
-
-    figure_height = max(4.8, 0.34 * len(plot_df) + 1.5)
-    figure, axis = plt.subplots(figsize=(7.8, figure_height))
-
-    axis.errorbar(
-        mean_scores,
-        y_positions,
-        xerr=std_scores,
-        fmt="o",
-        capsize=3,
+    heatmap_data = (
+        plot_df
+        .groupby(
+            ["k", "max_depth"],
+            observed=True,
+        )["mean_test_score"]
+        .max()
+        .unstack("max_depth")
     )
 
-    best_row = plot_df.loc[plot_df["rank_test_score"].astype(int).idxmin()]
-    best_score = float(best_row["mean_test_score"])
-    axis.axvline(
-        best_score,
-        linestyle="--",
-        linewidth=1.0,
-        alpha=0.7,
+    # --------------------------------------------------------
+    # Sort k values numerically
+    # --------------------------------------------------------
+
+    k_order = sorted(
+        heatmap_data.index,
+        key=lambda value: (
+            int(value)
+            if value.isdigit()
+            else float("inf")
+        ),
     )
 
-    axis.set_yticks(y_positions, labels)
-    axis.set_xlabel("Mean inner-CV macro F1-score")
-    axis.set_ylabel("")
-    axis.set_title(f"{model_name} hyperparameter search — top candidates")
-    axis.grid(axis="x", alpha=0.22)
-    axis.spines["top"].set_visible(False)
-    axis.spines["right"].set_visible(False)
+    # --------------------------------------------------------
+    # Sort max_depth numerically, with None at the end
+    # --------------------------------------------------------
+
+    depth_values = [
+        value
+        for value in heatmap_data.columns
+        if value != "None"
+    ]
+
+    depth_order = sorted(
+        depth_values,
+        key=int,
+    )
+
+    if "None" in heatmap_data.columns:
+        depth_order.append("None")
+
+    heatmap_data = heatmap_data.reindex(
+        index=k_order,
+        columns=depth_order,
+    )
+
+    values = heatmap_data.to_numpy(
+        dtype=float
+    )
+
+    # --------------------------------------------------------
+    # Plot
+    # --------------------------------------------------------
+
+    figure, axis = plt.subplots(
+        figsize=(7.2, 5.1)
+    )
+
+    image = axis.imshow(
+        values,
+        aspect="auto",
+        cmap="viridis",
+    )
+
+    # --------------------------------------------------------
+    # Annotate cells
+    # --------------------------------------------------------
+
+    finite_values = values[
+        np.isfinite(values)
+    ]
+
+    if finite_values.size > 0:
+        threshold = (
+            float(finite_values.min())
+            + float(finite_values.max())
+        ) / 2.0
+    else:
+        threshold = 0.0
+
+    for row_index in range(
+        values.shape[0]
+    ):
+        for column_index in range(
+            values.shape[1]
+        ):
+            score = values[
+                row_index,
+                column_index,
+            ]
+
+            if not np.isfinite(score):
+                continue
+
+            text_color = (
+                "white"
+                if score < threshold
+                else "black"
+            )
+
+            axis.text(
+                column_index,
+                row_index,
+                f"{score:.3f}",
+                ha="center",
+                va="center",
+                fontsize=9,
+                color=text_color,
+            )
+
+    # --------------------------------------------------------
+    # Axes
+    # --------------------------------------------------------
+
+    axis.set_xticks(
+        np.arange(
+            len(depth_order)
+        )
+    )
+
+    axis.set_xticklabels(
+        depth_order
+    )
+
+    axis.set_yticks(
+        np.arange(
+            len(k_order)
+        )
+    )
+
+    axis.set_yticklabels(
+        k_order
+    )
+
+    axis.set_xlabel(
+        "Random Forest max depth"
+    )
+
+    axis.set_ylabel(
+        "Number of selected features (k)"
+    )
+
+    axis.set_title(
+        f"{model_name} hyperparameter optimization"
+    )
+
+    # --------------------------------------------------------
+    # Color bar
+    # --------------------------------------------------------
+
+    colorbar = figure.colorbar(
+        image,
+        ax=axis,
+        pad=0.03,
+    )
+
+    colorbar.set_label(
+        "Best mean inner-CV macro F1-score"
+    )
 
     figure.tight_layout()
-    _save_figure(figure, output_pdf_path)
-    plt.close(figure)
+
+    _save_figure(
+        figure,
+        output_pdf_path,
+    )
+
+    plt.close(
+        figure
+    )
 
 
 def plot_final_test_confusion_matrix(

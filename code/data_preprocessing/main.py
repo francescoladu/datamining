@@ -97,22 +97,50 @@ def main() -> None:
         )
         print(mutual_information.head(relevant_feature_count).to_string(index=False))
 
-        # 4. First and only plot family: feature histograms grouped by class.
-        print("\n[4/6] Generating feature histograms grouped by class label...")
-        histogram_paths = plots.plot_feature_histograms_by_class(
+        # 4. Compact feature-distribution panels grouped by class.
+        print(
+            "\n[4/6] Generating compact feature distributions by class..."
+        )
+
+        distribution_paths = plots.plot_feature_histograms_by_class(
             data=data,
-            feature_columns=X.columns.tolist(),
+
+            # Mutual-Information order puts the most informative
+            # features first.
+            feature_columns=(
+                mutual_information[
+                    "Feature"
+                ]
+                .tolist()
+            ),
+
             target_column=config.TARGET_COLUMN,
-            output_dir=config.feature_histograms_dir(dataset_name),
+
+            output_dir=(
+                config.feature_histograms_dir(
+                    dataset_name
+                )
+            ),
+
             class_label_names={
-                config.PHISHING_LABEL: f"Phishing ({config.PHISHING_LABEL})",
+                config.PHISHING_LABEL: (
+                    f"Phishing "
+                    f"({config.PHISHING_LABEL})"
+                ),
                 config.LEGITIMATE_LABEL: (
-                    f"Legitimate ({config.LEGITIMATE_LABEL})"
+                    f"Legitimate "
+                    f"({config.LEGITIMATE_LABEL})"
                 ),
             },
+
+            features_per_figure=10,
+            columns_per_figure=2,
         )
+
         print(
-            f"-> Generated {len(histogram_paths)} histograms in "
+            f"-> Generated "
+            f"{len(distribution_paths)} "
+            "multi-panel figures in "
             f"{config.feature_histograms_dir(dataset_name).name}/"
         )
 
