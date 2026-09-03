@@ -8,7 +8,6 @@ from sklearn.inspection import permutation_importance
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
 
-# Consistent project imports
 from model_selection import config
 from model_selection.utils import (
     compute_classification_metrics,
@@ -18,21 +17,22 @@ from model_selection.utils import (
 )
 from shared.modeling import build_pipeline
 
-# Use config.RANDOM_STATE consistently below
+
 outer_cv = StratifiedKFold(
-    n_splits=config.N_OUTER_SPLITS, 
-    shuffle=True, 
-    random_state=config.RANDOM_STATE
+    n_splits=config.N_OUTER_SPLITS,
+    shuffle=True,
+    random_state=config.RANDOM_STATE,
 )
 
 final_inner_cv = StratifiedKFold(
-    n_splits=config.N_INNER_SPLITS, 
-    shuffle=True, 
-    random_state=config.RANDOM_STATE
+    n_splits=config.N_INNER_SPLITS,
+    shuffle=True,
+    random_state=config.RANDOM_STATE,
 )
 
 decision_tree_pipeline = build_pipeline("Decision Tree")
 random_forest_pipeline = build_pipeline("Random Forest")
+
 
 def _extract_prediction_rows(
     *,
@@ -178,6 +178,16 @@ def nested_cross_validation(
             raise ValueError("search_method must be either 'grid' or 'random'.")
 
         inner_search.fit(X_outer_train, y_outer_train)
+
+        # best_index_ identifies the candidate selected by the one-SE rule.
+        selected_index = inner_search.best_index_
+        selected_inner_macro_f1 = float(
+            inner_search.cv_results_["mean_test_score"][selected_index]
+        )
+        max_inner_macro_f1 = float(
+            np.max(inner_search.cv_results_["mean_test_score"])
+        )
+
         best_pipeline = inner_search.best_estimator_
 
         metrics = compute_classification_metrics(
@@ -196,7 +206,8 @@ def nested_cross_validation(
                 "outer_fold": outer_fold,
                 "selected_k": selected_k,
                 "selected_feature_count": selected_feature_count,
-                "inner_best_macro_f1": float(inner_search.best_score_),
+                "inner_selected_macro_f1": selected_inner_macro_f1,
+                "inner_max_macro_f1": max_inner_macro_f1,
                 **metrics,
             }
         )
@@ -241,10 +252,11 @@ def nested_cross_validation(
                     }
                 )
 
-        print(f"  Inner best macro F1: {inner_search.best_score_:.4f}")
+        print(f"  Selected inner macro F1: {selected_inner_macro_f1:.4f}")
+        print(f"  Maximum inner macro F1: {max_inner_macro_f1:.4f}")
         print(f"  Outer macro F1: {metrics['macro_f1']:.4f}")
         print(f"  Selected k: {selected_k}")
-        print(f"  Best parameters: {inner_search.best_params_}")
+        print(f"  Selected parameters: {inner_search.best_params_}")
         print()
 
     return {

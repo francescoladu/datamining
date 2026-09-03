@@ -29,7 +29,7 @@ INDEX_COLUMNS = [
 
 # Number of Mutual-Information-ranked features included in the
 # Spearman correlation heatmap.
-TOP_FEATURES_NUMBER = 10
+TOP_FEATURES_NUMBER = 30
 
 # Number of strongest correlations to export in CSV format.
 TOP_CORRELATIONS_NUMBER = 15

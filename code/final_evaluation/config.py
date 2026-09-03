@@ -3,13 +3,16 @@ from typing import Final
 
 from shared.config import CODE_DIR, DATA_DIR, SELECTED_RUN_NAME
 
+
 RUN_NAME: Final[str] = SELECTED_RUN_NAME
+
 if Path(RUN_NAME).name != RUN_NAME:
     raise ValueError("SELECTED_RUN_NAME must be a directory name, not a path.")
 
 MODEL_SELECTION_OUTPUT_DIR: Final[Path] = (
     CODE_DIR / "model_selection" / "outputs" / RUN_NAME
 )
+
 FINAL_BEST_PARAMETERS_PATH: Final[Path] = (
     MODEL_SELECTION_OUTPUT_DIR
     / "hyperparameter_search"

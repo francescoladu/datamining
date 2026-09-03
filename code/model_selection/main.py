@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from code.model_selection.utils import select_by_one_se_rule
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
@@ -37,6 +36,7 @@ from model_selection.summaries import (
     compute_statistical_tests,
     summarize_permutation_importance,
 )
+from model_selection.utils import select_by_one_se_rule
 from shared.config import DATA_DIR
 from shared.modeling import load_clean_dataset
 
@@ -91,6 +91,11 @@ def compact_search_results(
     results = pd.DataFrame(search.cv_results_).copy()
     results.insert(0, "candidate_id", np.arange(1, len(results) + 1))
 
+    # rank_test_score refers to the candidate with the highest mean score.
+    # selected_by_one_se identifies the candidate actually refitted.
+    results["selected_by_one_se"] = False
+    results.loc[search.best_index_, "selected_by_one_se"] = True
+
     if "params" in results.columns:
         results["params"] = results["params"].map(
             lambda value: json.dumps(value, sort_keys=True, default=str)
@@ -98,6 +103,7 @@ def compact_search_results(
 
     preferred_columns = [
         "candidate_id",
+        "selected_by_one_se",
         "rank_test_score",
         "mean_test_score",
         "std_test_score",
@@ -191,6 +197,7 @@ def create_final_search(
             return_train_score=False,
             error_score="raise",
         )
+
     if best_model_family == "Random Forest":
         return RandomizedSearchCV(
             estimator=random_forest_pipeline,
@@ -204,6 +211,7 @@ def create_final_search(
             return_train_score=False,
             error_score="raise",
         )
+
     raise RuntimeError(f"Unknown model family: {best_model_family}")
 
 
@@ -250,6 +258,7 @@ def main() -> None:
         "development_observations": len(X_dev),
         "input_features": X_dev.shape[1],
         "data_scope": "development_only",
+        "selection_rule": "one_standard_error",
     }
     save_json(
         run_configuration,
@@ -340,6 +349,7 @@ def main() -> None:
         paths.diagnostics / "error_by_feature_value.csv",
         "error rates by feature value",
     )
+
     if not permutation_scores.empty:
         save_csv(
             permutation_summary,
@@ -364,22 +374,37 @@ def main() -> None:
     final_search.fit(X_dev, y_dev)
     final_model = final_search.best_estimator_
 
-    print(
-        f"Final Development CV Score ({config.PRIMARY_SCORING}): "
-        f"{final_search.best_score_:.4f}"
+    selected_index = final_search.best_index_
+    selected_development_cv_score = float(
+        final_search.cv_results_["mean_test_score"][selected_index]
     )
-    print(f"Final Optimized Hyperparameters: {final_search.best_params_}\n")
+    max_development_cv_score = float(
+        np.max(final_search.cv_results_["mean_test_score"])
+    )
+
+    print(
+        f"Selected Development CV Score ({config.PRIMARY_SCORING}): "
+        f"{selected_development_cv_score:.4f}"
+    )
+    print(
+        f"Maximum Development CV Score ({config.PRIMARY_SCORING}): "
+        f"{max_development_cv_score:.4f}"
+    )
+    print(f"Final Selected Hyperparameters: {final_search.best_params_}\n")
 
     final_search_table = compact_search_results(final_search)
     final_best_parameters = pd.DataFrame(
         [
             {
                 "model": best_model_family,
-                "development_cv_score": float(final_search.best_score_),
+                # Keep this exact column name for final_evaluation/shared.modeling.
+                "development_cv_score": selected_development_cv_score,
+                "max_development_cv_score": max_development_cv_score,
                 **final_search.best_params_,
             }
         ]
     )
+
     final_features = final_selected_feature_table(
         final_model,
         list(X_dev.columns),
@@ -393,7 +418,7 @@ def main() -> None:
     save_csv(
         final_best_parameters,
         paths.hyperparameter_search / "final_best_parameters.csv",
-        "final best parameters",
+        "final selected parameters",
     )
     save_csv(
         final_features,
@@ -426,7 +451,8 @@ def main() -> None:
     results_summary = {
         "selected_model": best_model_family,
         "selected_k": selected_k,
-        "development_cv_score": float(final_search.best_score_),
+        "development_cv_score": selected_development_cv_score,
+        "max_development_cv_score": max_development_cv_score,
         "nested_cv_macro_f1_mean": float(
             nested_summary.loc[best_model_family, "macro_f1_mean"]
         ),
