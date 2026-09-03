@@ -1,89 +1,89 @@
 import os
+import numpy as np
 import pandas as pd
 from scipy.io import arff
-from sklearn.model_selection import train_test_split
 
-def clean_and_split_dataset(input_path, output_dir, test_size=0.2, random_state=42):
-    """
-    Loads the UCI Phishing Websites ARFF file, decodes bytes, cleans 
-    potential leakage sources (duplicates/index columns), and outputs
-    clean, stratified train and test CSV files.
-    """
+def balanced_group_split(df, group_col, test_size=0.2, random_state=42, tolerance=0.02):
+    np.random.seed(random_state)
+
+    group_sizes = df[group_col].value_counts().to_dict()
+    group_ids = list(group_sizes.keys())
+
+    np.random.shuffle(group_ids)                          
+    group_ids.sort(key=lambda g: group_sizes[g], reverse=True) 
+
+    train_groups, test_groups = [], []
+    train_samples, test_samples = 0, 0
+    total_samples = len(df)
+    target_test_samples = int(total_samples * test_size)
+
+    for gid in group_ids:
+        size = group_sizes[gid]
+        if test_samples + size <= target_test_samples:
+            test_groups.append(gid)
+            test_samples += size
+        else:
+            train_groups.append(gid)
+            train_samples += size
+
+    train_df = df[df[group_col].isin(train_groups)].reset_index(drop=True)
+    test_df = df[df[group_col].isin(test_groups)].reset_index(drop=True)
+
+    actual_test_frac = len(test_df) / total_samples
+    print(f"Target test rows: {target_test_samples}")
+    print(f"Actual split: Train={len(train_df)} ({len(train_df)/total_samples:.2%}), "
+          f"Test={len(test_df)} ({actual_test_frac:.2%})")
+
+    if abs(actual_test_frac - test_size) > tolerance:
+        print(f"Warning: split deviates from target by more than {tolerance:.0%}. "
+              f"Consider checking for a dominant group size or using a different random_state.")
+
+    return train_df, test_df
+
+
+def clean_and_split_by_signature(input_path, output_dir, test_size=0.2, random_state=42):
     print(f"Loading ARFF file from: {input_path}")
     if not os.path.exists(input_path):
-        raise FileNotFoundError(f"Source file not found at {input_path}. Run download target first.")
+        raise FileNotFoundError(f"Source file not found at {input_path}.")
 
-    # 1. Load the ARFF file
     raw_data, meta = arff.loadarff(input_path)
     df = pd.DataFrame(raw_data)
 
-    # 2. Decode byte-strings into integers
-    print("Decoding byte-strings to standard integers...")
     for col in df.columns:
         if df[col].dtype == object:
             df[col] = df[col].str.decode('utf-8').astype(int)
         else:
             df[col] = df[col].astype(int)
 
-    # 3. Drop index or sequential ID columns if present
-    id_cols = [col for col in df.columns if col.lower() in ['id', 'index', 'idx', 'unnamed: 0']]
+    id_cols = [col for col in df.columns if col.lower() in ['id', 'index', 'idx']]
     if id_cols:
-        print(f"Removing identifier column(s) to avoid leakage: {id_cols}")
         df = df.drop(columns=id_cols)
-    else:
-        print("No index/ID column detected in raw file (ideal for preventing index leakage).")
 
-    # 4. Remove Duplicate Rows
-    initial_rows = len(df)
-    df = df.drop_duplicates().reset_index(drop=True)
-    duplicates_removed = initial_rows - len(df)
-    print(f"Removed {duplicates_removed} duplicate row(s). Total unique rows: {len(df)}")
-
-    # 5. Locate target column
     possible_targets = ['Result', 'result', 'class', 'Class']
-    target_col = None
-    for col in possible_targets:
-        if col in df.columns:
-            target_col = col
-            break
-            
+    target_col = next((col for col in possible_targets if col in df.columns), None)
     if target_col is None:
-        raise ValueError(f"Could not identify the target column. Columns present: {list(df.columns)}")
-        
-    print(f"Target column identified: '{target_col}'")
-    
-    # 6. Split features and target
-    X = df.drop(columns=[target_col])
-    y = df[target_col]
+        raise ValueError("Could not identify target column.")
 
-    # 7. Stratified Train/Test Split
-    # Stratification ensures that both subsets maintain the same class ratio
-    print(f"Splitting data (test size: {test_size:.1%}, stratified on '{target_col}')...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, 
-        test_size=test_size, 
-        stratify=y, 
-        random_state=random_state
-    )
+    feature_cols = [col for col in df.columns if col != target_col]
+    df['signature_id'] = df.groupby(feature_cols).ngroup()
 
-    # Recombine features and targets for saving
-    train_df = pd.concat([X_train, y_train], axis=1)
-    test_df = pd.concat([X_test, y_test], axis=1)
+    train_df, test_df = balanced_group_split(df, 'signature_id', test_size=test_size, random_state=random_state)
 
-    # 8. Save output files
+    train_df = train_df.drop(columns=['signature_id'])
+    test_df = test_df.drop(columns=['signature_id'])
+
     os.makedirs(output_dir, exist_ok=True)
-    train_path = os.path.join(output_dir, "train_cleaned.csv")
-    test_path = os.path.join(output_dir, "test_cleaned.csv")
-    
+    train_path = os.path.join(output_dir, "train_grouped.csv")
+    test_path = os.path.join(output_dir, "test_grouped.csv")
+
     train_df.to_csv(train_path, index=False)
     test_df.to_csv(test_path, index=False)
-    
-    print(f"Cleaned training set saved to: {train_path} ({len(train_df)} samples)")
-    print(f"Cleaned test set saved to: {test_path} ({len(test_df)} samples)")
-    print("Preprocessing completed successfully.")
+
+    print(f"Split complete. Train set size: {len(train_df)}, Test set size: {len(test_df)}")
+    print("No identical feature vectors exist across the train and test split boundary.")
+
 
 if __name__ == "__main__":
     INPUT_FILE = "data/Training Dataset.arff"
     OUTPUT_FOLDER = "data"
-    
-    clean_and_split_dataset(INPUT_FILE, OUTPUT_FOLDER)
+    clean_and_split_by_signature(INPUT_FILE, OUTPUT_FOLDER)
