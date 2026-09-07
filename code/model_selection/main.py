@@ -42,7 +42,7 @@ from shared.modeling import load_clean_dataset
 
 
 def experiment_tag(k_values: list[Any]) -> str:
-    """Build a filesystem-safe experiment name from the active k setting."""
+    """Build a filesystem-safe experiment name."""
     labels = [str(value).lower() for value in k_values]
     if len(labels) == 1:
         return f"k_{labels[0]}"
@@ -56,14 +56,12 @@ def save_csv(
     *,
     index: bool = False,
 ) -> None:
-    """Save a DataFrame and print a consistent audit message."""
     path.parent.mkdir(parents=True, exist_ok=True)
     dataframe.to_csv(path, index=index)
     print(f"-> Saved {description}: {path.relative_to(path.parents[2])}")
 
 
 def save_json(payload: dict[str, Any], path: Path, description: str) -> None:
-    """Save JSON metadata with readable formatting."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n",
@@ -76,7 +74,6 @@ def combine_result_tables(
     model_results: list[dict[str, pd.DataFrame]],
     table_name: str,
 ) -> pd.DataFrame:
-    """Concatenate the same result table returned by multiple model runs."""
     frames = [result[table_name] for result in model_results]
     non_empty_frames = [frame for frame in frames if not frame.empty]
     if not non_empty_frames:
@@ -87,18 +84,14 @@ def combine_result_tables(
 def compact_search_results(
     search: GridSearchCV | RandomizedSearchCV,
 ) -> pd.DataFrame:
-    """Convert final SearchCV results into a CSV-friendly table."""
     results = pd.DataFrame(search.cv_results_).copy()
     results.insert(0, "candidate_id", np.arange(1, len(results) + 1))
-
-    # rank_test_score refers to the candidate with the highest mean score.
-    # selected_by_one_se identifies the candidate actually refitted.
     results["selected_by_one_se"] = False
     results.loc[search.best_index_, "selected_by_one_se"] = True
 
     if "params" in results.columns:
         results["params"] = results["params"].map(
-            lambda value: json.dumps(value, sort_keys=True, default=str)
+            lambda val: json.dumps(val, sort_keys=True, default=str)
         )
 
     preferred_columns = [
@@ -113,21 +106,12 @@ def compact_search_results(
         "std_score_time",
         "params",
     ]
-    parameter_columns = sorted(
-        column for column in results.columns if column.startswith("param_")
+    param_cols = sorted(col for col in results.columns if col.startswith("param_"))
+    split_cols = sorted(
+        col for col in results.columns if col.startswith("split") and col.endswith("_test_score")
     )
-    split_columns = sorted(
-        column
-        for column in results.columns
-        if column.startswith("split") and column.endswith("_test_score")
-    )
-
     return results[
-        [
-            column
-            for column in preferred_columns + parameter_columns + split_columns
-            if column in results.columns
-        ]
+        [c for c in preferred_columns + param_cols + split_cols if c in results.columns]
     ]
 
 
@@ -135,7 +119,6 @@ def final_selected_feature_table(
     final_model: Any,
     feature_names: list[str],
 ) -> pd.DataFrame:
-    """Export MI scores and selection status from the final fitted pipeline."""
     selector = final_model.named_steps["feature_selection"]
     selected_mask = np.asarray(selector.get_support(), dtype=bool)
     scores = np.asarray(selector.scores_, dtype=float)
@@ -145,7 +128,6 @@ def final_selected_feature_table(
         .astype(int)
         .to_numpy()
     )
-
     return pd.DataFrame(
         {
             "feature": feature_names,
@@ -153,17 +135,12 @@ def final_selected_feature_table(
             "mutual_information_rank": ranks,
             "selected": selected_mask,
         }
-    ).sort_values(
-        ["selected", "mutual_information_rank"],
-        ascending=[False, True],
-    )
+    ).sort_values(["selected", "mutual_information_rank"], ascending=[False, True])
 
 
 def build_nested_summary(nested_scores: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate outer-fold metrics for model-family comparison."""
     return (
-        nested_scores
-        .groupby("model")
+        nested_scores.groupby("model")
         .agg(
             macro_f1_mean=("macro_f1", "mean"),
             macro_f1_std=("macro_f1", "std"),
@@ -182,10 +159,7 @@ def build_nested_summary(nested_scores: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def create_final_search(
-    best_model_family: str,
-) -> GridSearchCV | RandomizedSearchCV:
-    """Create the development-set search used after model-family selection."""
+def create_final_search(best_model_family: str) -> GridSearchCV | RandomizedSearchCV:
     if best_model_family == "Decision Tree":
         return GridSearchCV(
             estimator=decision_tree_pipeline,
@@ -224,22 +198,17 @@ def main() -> None:
     print("STARTING MODEL SELECTION PIPELINE")
     print(f"Experiment: {run_tag}")
     print(f"k candidates: {config.FEATURE_SELECTION_K_VALUES}")
-    print("Data scope: development set only")
     print("=" * 80)
 
     try:
-        X_dev, y_dev = load_clean_dataset(
-            train_path,
-            "development dataset",
-        )
+        X_dev, y_dev, w_dev = load_clean_dataset(train_path, "development dataset")
     except (FileNotFoundError, ValueError) as error:
         print(f"Error loading development dataset: {error}")
-        print("Please run your preprocessing pipeline first.")
         sys.exit(1)
 
     print(
-        f"Development Set: {X_dev.shape[0]} samples with "
-        f"{X_dev.shape[1]} features.\n"
+        f"Development Set: {X_dev.shape[0]} unique profiles with "
+        f"{X_dev.shape[1]} features (Total weighted instances: {w_dev.sum():.0f}).\n"
     )
 
     run_configuration = {
@@ -250,21 +219,15 @@ def main() -> None:
         "random_forest_random_iterations": config.N_RANDOM_ITERATIONS,
         "outer_folds": outer_cv.n_splits,
         "final_inner_folds": final_inner_cv.n_splits,
-        "compute_permutation_importance": (
-            config.COMPUTE_PERMUTATION_IMPORTANCE
-        ),
+        "compute_permutation_importance": config.COMPUTE_PERMUTATION_IMPORTANCE,
         "permutation_repeats": config.PERMUTATION_N_REPEATS,
         "high_confidence_threshold": config.HIGH_CONFIDENCE_THRESHOLD,
-        "development_observations": len(X_dev),
+        "development_unique_profiles": len(X_dev),
+        "development_weighted_instances": float(w_dev.sum()),
         "input_features": X_dev.shape[1],
-        "data_scope": "development_only",
         "selection_rule": "one_standard_error",
     }
-    save_json(
-        run_configuration,
-        paths.root / "run_config.json",
-        "run configuration",
-    )
+    save_json(run_configuration, paths.root / "run_config.json", "run configuration")
 
     outer_splits = list(outer_cv.split(X_dev, y_dev))
 
@@ -278,6 +241,7 @@ def main() -> None:
         search_method="grid",
         X=X_dev,
         y=y_dev,
+        sample_weight=w_dev,
         outer_splits=outer_splits,
     )
 
@@ -291,6 +255,7 @@ def main() -> None:
         search_method="random",
         X=X_dev,
         y=y_dev,
+        sample_weight=w_dev,
         outer_splits=outer_splits,
         n_random_iterations=config.N_RANDOM_ITERATIONS,
     )
@@ -298,57 +263,26 @@ def main() -> None:
     model_results = [decision_tree_results, random_forest_results]
     nested_scores = combine_result_tables(model_results, "fold_scores")
     oof_predictions = combine_result_tables(model_results, "oof_predictions")
-    permutation_scores = combine_result_tables(
-        model_results,
-        "permutation_importance",
-    )
+    permutation_scores = combine_result_tables(model_results, "permutation_importance")
 
     nested_summary = build_nested_summary(nested_scores)
     permutation_summary = summarize_permutation_importance(permutation_scores)
     error_summary = build_error_summary(oof_predictions)
-    error_by_feature_value = build_error_by_feature_value(
-        oof_predictions,
-        X_dev,
-    )
+    error_by_feature_value = build_error_by_feature_value(oof_predictions, X_dev)
     statistical_tests = compute_statistical_tests(nested_scores)
 
     print("-" * 80)
-    print("Nested Cross-Validation Performance Summary")
+    print("Nested Cross-Validation Performance Summary (Weighted)")
     print("-" * 80)
     print(nested_summary.round(4))
     print()
 
-    save_csv(
-        nested_scores,
-        paths.model_comparison / "fold_scores.csv",
-        "outer-fold scores",
-    )
-    save_csv(
-        nested_summary.reset_index(),
-        paths.model_comparison / "model_summary.csv",
-        "aggregated performance summary",
-    )
-    save_csv(
-        statistical_tests,
-        paths.model_comparison / "statistical_tests.csv",
-        "paired statistical tests",
-    )
-
-    save_csv(
-        oof_predictions,
-        paths.diagnostics / "oof_predictions.csv",
-        "out-of-fold predictions",
-    )
-    save_csv(
-        error_summary,
-        paths.diagnostics / "error_summary.csv",
-        "out-of-fold error summary",
-    )
-    save_csv(
-        error_by_feature_value,
-        paths.diagnostics / "error_by_feature_value.csv",
-        "error rates by feature value",
-    )
+    save_csv(nested_scores, paths.model_comparison / "fold_scores.csv", "outer-fold scores")
+    save_csv(nested_summary.reset_index(), paths.model_comparison / "model_summary.csv", "aggregated performance summary")
+    save_csv(statistical_tests, paths.model_comparison / "statistical_tests.csv", "paired statistical tests")
+    save_csv(oof_predictions, paths.diagnostics / "oof_predictions.csv", "out-of-fold predictions")
+    save_csv(error_summary, paths.diagnostics / "error_summary.csv", "out-of-fold error summary")
+    save_csv(error_by_feature_value, paths.diagnostics / "error_by_feature_value.csv", "error rates by feature value")
 
     if not permutation_scores.empty:
         save_csv(
@@ -358,20 +292,19 @@ def main() -> None:
         )
 
     model_comparison_pdf = paths.figures / "model_comparison.pdf"
-    plot_nested_cv_comparison(
-        nested_scores=nested_scores,
-        output_pdf_path=model_comparison_pdf,
-    )
+    plot_nested_cv_comparison(nested_scores=nested_scores, output_pdf_path=model_comparison_pdf)
     print(f"-> Generated model comparison chart: {model_comparison_pdf.name}\n")
 
     best_model_family = str(nested_summary.index[0])
-    print(f"Selected Model Family for Final Deployment: {best_model_family}")
-    print("-" * 80)
+    print(f"Selected Model Family: {best_model_family}")
     print(f"Fitting final {best_model_family} on full Development Set...")
-    print("-" * 80)
 
     final_search = create_final_search(best_model_family)
-    final_search.fit(X_dev, y_dev)
+    final_search.fit(
+        X_dev,
+        y_dev,
+        classifier__sample_weight=np.asarray(w_dev),
+    )
     final_model = final_search.best_estimator_
 
     selected_index = final_search.best_index_
@@ -382,14 +315,7 @@ def main() -> None:
         np.max(final_search.cv_results_["mean_test_score"])
     )
 
-    print(
-        f"Selected Development CV Score ({config.PRIMARY_SCORING}): "
-        f"{selected_development_cv_score:.4f}"
-    )
-    print(
-        f"Maximum Development CV Score ({config.PRIMARY_SCORING}): "
-        f"{max_development_cv_score:.4f}"
-    )
+    print(f"Selected Development CV Score ({config.PRIMARY_SCORING}): {selected_development_cv_score:.4f}")
     print(f"Final Selected Hyperparameters: {final_search.best_params_}\n")
 
     final_search_table = compact_search_results(final_search)
@@ -397,7 +323,6 @@ def main() -> None:
         [
             {
                 "model": best_model_family,
-                # Keep this exact column name for final_evaluation/shared.modeling.
                 "development_cv_score": selected_development_cv_score,
                 "max_development_cv_score": max_development_cv_score,
                 **final_search.best_params_,
@@ -405,33 +330,14 @@ def main() -> None:
         ]
     )
 
-    final_features = final_selected_feature_table(
-        final_model,
-        list(X_dev.columns),
-    )
+    final_features = final_selected_feature_table(final_model, list(X_dev.columns))
 
-    save_csv(
-        final_search_table,
-        paths.hyperparameter_search / "final_search_results.csv",
-        "final development search candidates",
-    )
-    save_csv(
-        final_best_parameters,
-        paths.hyperparameter_search / "final_best_parameters.csv",
-        "final selected parameters",
-    )
-    save_csv(
-        final_features,
-        paths.feature_selection / "final_selected_features.csv",
-        "final feature-selection results",
-    )
+    save_csv(final_search_table, paths.hyperparameter_search / "final_search_results.csv", "final search candidates")
+    save_csv(final_best_parameters, paths.hyperparameter_search / "final_best_parameters.csv", "final selected parameters")
+    save_csv(final_features, paths.feature_selection / "final_selected_features.csv", "final feature-selection results")
 
     feature_ranking_pdf = paths.figures / "feature_selection_ranking.pdf"
-    plot_selected_feature_ranking(
-        selected_features=final_features,
-        output_pdf_path=feature_ranking_pdf,
-        max_display=15,
-    )
+    plot_selected_feature_ranking(selected_features=final_features, output_pdf_path=feature_ranking_pdf, max_display=15)
     print(f"-> Generated feature-selection ranking: {feature_ranking_pdf.name}")
 
     hyperparameter_pdf = paths.figures / "hyperparameter_optimization.pdf"
@@ -441,40 +347,21 @@ def main() -> None:
         model_name=best_model_family,
         max_candidates=15,
     )
-    print(f"-> Generated hyperparameter-search chart: {hyperparameter_pdf.name}\n")
+    print(f"-> Generated hyperparameter chart: {hyperparameter_pdf.name}\n")
 
-    selected_k = final_search.best_params_.get("feature_selection__k")
-    wilcoxon_p_value = None
-    if not statistical_tests.empty:
-        wilcoxon_p_value = float(statistical_tests.iloc[0]["p_value"])
-
+    wilcoxon_p = float(statistical_tests.iloc[0]["p_value"]) if not statistical_tests.empty else None
     results_summary = {
         "selected_model": best_model_family,
-        "selected_k": selected_k,
+        "selected_k": final_search.best_params_.get("feature_selection__k"),
         "development_cv_score": selected_development_cv_score,
         "max_development_cv_score": max_development_cv_score,
-        "nested_cv_macro_f1_mean": float(
-            nested_summary.loc[best_model_family, "macro_f1_mean"]
-        ),
-        "nested_cv_macro_f1_std": float(
-            nested_summary.loc[best_model_family, "macro_f1_std"]
-        ),
-        "wilcoxon_p_value": wilcoxon_p_value,
-        "final_best_parameters_path": (
-            "hyperparameter_search/final_best_parameters.csv"
-        ),
+        "nested_cv_macro_f1_mean": float(nested_summary.loc[best_model_family, "macro_f1_mean"]),
+        "nested_cv_macro_f1_std": float(nested_summary.loc[best_model_family, "macro_f1_std"]),
+        "wilcoxon_p_value": wilcoxon_p,
     }
-    save_json(
-        results_summary,
-        paths.root / "results_summary.json",
-        "run result summary",
-    )
-
+    save_json(results_summary, paths.root / "results_summary.json", "run result summary")
     print("=" * 80)
-    print("MODEL SELECTION PIPELINE RUN COMPLETED SUCCESSFULLY")
-    print("The held-out test set was not loaded or evaluated.")
-    print("Run final_evaluation/main.py only after freezing this configuration.")
-    print(f"Outputs directory: {paths.root}")
+    print("MODEL SELECTION PIPELINE RUN COMPLETED SUCCESSFULLY.")
     print("=" * 80)
 
 

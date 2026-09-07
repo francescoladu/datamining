@@ -5,6 +5,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
@@ -14,6 +15,7 @@ from sklearn.tree import DecisionTreeClassifier
 from shared.config import (
     EXPECTED_LABELS,
     RANDOM_STATE,
+    SAMPLE_WEIGHT_COLUMN,
     TARGET_COLUMN,
 )
 
@@ -21,8 +23,13 @@ from shared.config import (
 def load_clean_dataset(
     path: Path,
     name: str,
-) -> tuple[pd.DataFrame, pd.Series]:
-    """Load one cleaned dataset and validate the project invariants."""
+) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """
+    Load one cleaned dataset and validate project invariants.
+
+    Separates features (X), target (y), and sample_weight (w) so that
+    sample_weight is never treated as a predictor.
+    """
     if not path.is_file():
         raise FileNotFoundError(f"{name} not found:\n{path}")
 
@@ -34,13 +41,24 @@ def load_clean_dataset(
             f"Target column {TARGET_COLUMN!r} missing from {name}."
         )
 
-    X = dataset.drop(columns=[TARGET_COLUMN])
     y = dataset[TARGET_COLUMN].copy()
-
     if set(y.unique()) != EXPECTED_LABELS:
         raise ValueError(
             f"Unexpected labels in {name}: {sorted(y.unique())}"
         )
+
+    # Separate sample weights
+    if SAMPLE_WEIGHT_COLUMN in dataset.columns:
+        sample_weight = dataset[SAMPLE_WEIGHT_COLUMN].astype(float).copy()
+        drop_columns = [TARGET_COLUMN, SAMPLE_WEIGHT_COLUMN]
+    else:
+        sample_weight = pd.Series(
+            1.0, index=dataset.index, name=SAMPLE_WEIGHT_COLUMN, dtype=float
+        )
+        drop_columns = [TARGET_COLUMN]
+
+    X = dataset.drop(columns=drop_columns).copy()
+
     if X.empty:
         raise ValueError(f"{name} does not contain features.")
     if X.columns.has_duplicates:
@@ -54,19 +72,19 @@ def load_clean_dataset(
             f"{name} contains missing values in: {missing_columns}"
         )
 
-    return X, y
+    return X, y, sample_weight
 
 
 def load_development_and_test(
     development_path: Path,
     test_path: Path,
-) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
-    """Load development and test data with identical feature order."""
-    X_dev, y_dev = load_clean_dataset(
+) -> tuple[pd.DataFrame, pd.Series, pd.Series, pd.DataFrame, pd.Series, pd.Series]:
+    """Load development and test data with identical feature order and weights."""
+    X_dev, y_dev, w_dev = load_clean_dataset(
         development_path,
         "development dataset",
     )
-    X_test, y_test = load_clean_dataset(test_path, "test dataset")
+    X_test, y_test, w_test = load_clean_dataset(test_path, "test dataset")
 
     if set(X_dev.columns) != set(X_test.columns):
         missing_from_test = [
@@ -82,7 +100,7 @@ def load_development_and_test(
         )
 
     X_test = X_test.loc[:, X_dev.columns].copy()
-    return X_dev, y_dev, X_test, y_test
+    return X_dev, y_dev, w_dev, X_test, y_test, w_test
 
 
 def parse_parameter(value: str) -> Any:
@@ -183,13 +201,19 @@ def load_final_model_configuration(
 def rebuild_final_model(
     X_train: pd.DataFrame,
     y_train: pd.Series,
+    sample_weight: pd.Series | None,
     parameters_path: Path,
 ) -> tuple[Pipeline, str, float, dict[str, Any]]:
-    """Rebuild the frozen pipeline and refit it on the full development set."""
+    """Rebuild the frozen pipeline and refit it with sample weights."""
     model_name, development_cv_score, parameters = (
         load_final_model_configuration(parameters_path)
     )
     model = build_pipeline(model_name)
     model.set_params(**parameters)
-    model.fit(X_train, y_train)
+
+    fit_params: dict[str, Any] = {}
+    if sample_weight is not None:
+        fit_params["classifier__sample_weight"] = np.asarray(sample_weight)
+
+    model.fit(X_train, y_train, **fit_params)
     return model, model_name, development_cv_score, parameters

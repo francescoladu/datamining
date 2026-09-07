@@ -41,16 +41,17 @@ def _extract_prediction_rows(
     fitted_pipeline: Pipeline,
     X_outer_validation: Any,
     y_outer_validation: Any,
+    w_outer_validation: Any,
     outer_validation_idx: np.ndarray,
 ) -> list[dict[str, Any]]:
-    """Create one out-of-fold prediction record per validation observation."""
+    """Create out-of-fold prediction records with instance weights."""
     y_pred, phishing_probability = predict_with_phishing_probability(
         fitted_pipeline,
         X_outer_validation,
     )
     y_true = np.asarray(y_outer_validation)
+    weights = np.asarray(w_outer_validation)
 
-    # With two classes, P(legitimate) = 1 - P(phishing).
     predicted_confidence = np.where(
         y_pred == -1,
         phishing_probability,
@@ -64,21 +65,21 @@ def _extract_prediction_rows(
     )
 
     prediction_rows: list[dict[str, Any]] = []
-    for position, original_index, truth, prediction, probability, confidence in zip(
+    for position, orig_idx, truth, pred, prob, conf, weight in zip(
         outer_validation_idx,
         original_indices,
         y_true,
         y_pred,
         phishing_probability,
         predicted_confidence,
+        weights,
     ):
-        correct = bool(truth == prediction)
-
-        if truth == -1 and prediction == -1:
+        correct = bool(truth == pred)
+        if truth == -1 and pred == -1:
             error_type = "true_positive_phishing"
-        elif truth != -1 and prediction != -1:
+        elif truth != -1 and pred != -1:
             error_type = "true_negative_legitimate"
-        elif truth == -1 and prediction != -1:
+        elif truth == -1 and pred != -1:
             error_type = "false_negative"
         else:
             error_type = "false_positive"
@@ -88,16 +89,16 @@ def _extract_prediction_rows(
                 "model": model_name,
                 "outer_fold": outer_fold,
                 "sample_position": int(position),
-                "sample_index": original_index,
+                "sample_index": orig_idx,
+                "sample_weight": float(weight),
                 "y_true": truth,
-                "y_pred": prediction,
-                "phishing_probability": float(probability),
-                "predicted_confidence": float(confidence),
+                "y_pred": pred,
+                "phishing_probability": float(prob),
+                "predicted_confidence": float(conf),
                 "correct": correct,
                 "error_type": error_type,
                 "high_confidence_error": bool(
-                    (not correct)
-                    and confidence >= config.HIGH_CONFIDENCE_THRESHOLD
+                    (not correct) and conf >= config.HIGH_CONFIDENCE_THRESHOLD
                 ),
             }
         )
@@ -113,22 +114,15 @@ def nested_cross_validation(
     search_method: str,
     X: Any,
     y: Any,
+    sample_weight: Any,
     outer_splits: list[tuple[np.ndarray, np.ndarray]],
     n_random_iterations: int = config.N_RANDOM_ITERATIONS,
 ) -> dict[str, pd.DataFrame]:
-    """
-    Run nested stratified cross-validation and return analysis-ready tables.
-
-    Returned tables include fold-level metrics, out-of-fold predictions, and
-    permutation importance measured on untouched outer validation folds.
-    """
+    """Run nested stratified cross-validation with sample weights."""
     if not hasattr(X, "columns"):
-        raise TypeError(
-            "X must be a pandas DataFrame so feature names can be exported."
-        )
+        raise TypeError("X must be a pandas DataFrame.")
 
     feature_names = list(X.columns)
-
     fold_results: list[dict[str, Any]] = []
     prediction_rows: list[dict[str, Any]] = []
     permutation_rows: list[dict[str, Any]] = []
@@ -141,14 +135,21 @@ def nested_cross_validation(
 
         X_outer_train = select_rows(X, outer_train_idx)
         y_outer_train = select_rows(y, outer_train_idx)
+        w_outer_train = select_rows(sample_weight, outer_train_idx)
+
         X_outer_validation = select_rows(X, outer_validation_idx)
         y_outer_validation = select_rows(y, outer_validation_idx)
+        w_outer_validation = select_rows(sample_weight, outer_validation_idx)
 
         inner_cv = StratifiedKFold(
             n_splits=config.N_INNER_SPLITS,
             shuffle=True,
             random_state=config.RANDOM_STATE + outer_fold,
         )
+
+        fit_params = {
+            "classifier__sample_weight": np.asarray(w_outer_train),
+        }
 
         if search_method == "grid":
             inner_search: GridSearchCV | RandomizedSearchCV = GridSearchCV(
@@ -177,9 +178,8 @@ def nested_cross_validation(
         else:
             raise ValueError("search_method must be either 'grid' or 'random'.")
 
-        inner_search.fit(X_outer_train, y_outer_train)
+        inner_search.fit(X_outer_train, y_outer_train, **fit_params)
 
-        # best_index_ identifies the candidate selected by the one-SE rule.
         selected_index = inner_search.best_index_
         selected_inner_macro_f1 = float(
             inner_search.cv_results_["mean_test_score"][selected_index]
@@ -194,6 +194,7 @@ def nested_cross_validation(
             fitted_pipeline=best_pipeline,
             X_validation=X_outer_validation,
             y_validation=y_outer_validation,
+            sample_weight=w_outer_validation,
         )
 
         selector = best_pipeline.named_steps["feature_selection"]
@@ -219,6 +220,7 @@ def nested_cross_validation(
                 fitted_pipeline=best_pipeline,
                 X_outer_validation=X_outer_validation,
                 y_outer_validation=y_outer_validation,
+                w_outer_validation=w_outer_validation,
                 outer_validation_idx=outer_validation_idx,
             )
         )
@@ -253,11 +255,9 @@ def nested_cross_validation(
                 )
 
         print(f"  Selected inner macro F1: {selected_inner_macro_f1:.4f}")
-        print(f"  Maximum inner macro F1: {max_inner_macro_f1:.4f}")
         print(f"  Outer macro F1: {metrics['macro_f1']:.4f}")
         print(f"  Selected k: {selected_k}")
-        print(f"  Selected parameters: {inner_search.best_params_}")
-        print()
+        print(f"  Selected parameters: {inner_search.best_params_}\n")
 
     return {
         "fold_scores": pd.DataFrame(fold_results),

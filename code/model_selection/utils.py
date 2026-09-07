@@ -26,11 +26,7 @@ def predict_with_phishing_probability(
     fitted_pipeline: Pipeline,
     X_validation: Any,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Return class predictions and the probability assigned to phishing.
-
-    Phishing is encoded as -1.
-    """
+    """Return class predictions and phishing probability (class -1)."""
     y_pred = np.asarray(fitted_pipeline.predict(X_validation))
     classifier = fitted_pipeline.named_steps["classifier"]
 
@@ -52,41 +48,48 @@ def compute_classification_metrics(
     fitted_pipeline: Pipeline,
     X_validation: Any,
     y_validation: Any,
+    sample_weight: Any | None = None,
 ) -> dict[str, float]:
-    """Compute the classification metrics used by the project."""
+    """Compute classification metrics weighted by instance mass."""
     y_pred, phishing_probability = predict_with_phishing_probability(
         fitted_pipeline,
         X_validation,
     )
 
-    y_validation_array = np.asarray(y_validation)
-    y_phishing_binary = (y_validation_array == -1).astype(int)
+    y_val_array = np.asarray(y_validation)
+    y_phishing_binary = (y_val_array == -1).astype(int)
+    sw = np.asarray(sample_weight) if sample_weight is not None else None
 
     return {
         "macro_f1": f1_score(
-            y_validation_array,
+            y_val_array,
             y_pred,
             average="macro",
+            sample_weight=sw,
         ),
         "phishing_precision": precision_score(
-            y_validation_array,
+            y_val_array,
             y_pred,
             pos_label=-1,
             zero_division=0,
+            sample_weight=sw,
         ),
         "phishing_recall": recall_score(
-            y_validation_array,
+            y_val_array,
             y_pred,
             pos_label=-1,
             zero_division=0,
+            sample_weight=sw,
         ),
         "accuracy": accuracy_score(
-            y_validation_array,
+            y_val_array,
             y_pred,
+            sample_weight=sw,
         ),
         "roc_auc": roc_auc_score(
             y_phishing_binary,
             phishing_probability,
+            sample_weight=sw,
         ),
     }
 
@@ -95,54 +98,40 @@ def select_by_one_se_rule(cv_results: dict[str, Any]) -> int:
     """
     Select the simplest model within one standard error of the best score.
 
-    Simplicity priority:
+    Simplicity hierarchy:
       1. Smallest number of features (feature_selection__k)
-      2. Smallest tree depth (classifier__max_depth, if present)
-      3. Highest validation score as tie-breaker
+      2. Smallest tree depth (classifier__max_depth)
+      3. Highest validation score
     """
     mean_scores = np.asarray(cv_results["mean_test_score"], dtype=float)
     std_scores = np.asarray(cv_results["std_test_score"], dtype=float)
 
-    # Infer the number of CV folds directly from cv_results_.
     n_splits = len(
         [
-            column
-            for column in cv_results
-            if column.startswith("split")
-            and column.endswith("_test_score")
+            col
+            for col in cv_results
+            if col.startswith("split") and col.endswith("_test_score")
         ]
     )
     if n_splits == 0:
         n_splits = config.N_INNER_SPLITS
 
-    # Candidate with the highest mean validation score.
     best_idx = int(np.argmax(mean_scores))
     best_score = float(mean_scores[best_idx])
     best_std = float(std_scores[best_idx])
 
-    # Standard error of the best candidate across the inner folds.
     best_se = best_std / np.sqrt(n_splits)
     threshold = best_score - best_se
 
-    # Candidates whose mean CV score lies within one standard error
-    # of the maximum mean CV score.
     candidate_indices = np.where(mean_scores >= threshold)[0]
 
     def complexity_key(idx: int) -> tuple[int, int, float]:
-        """Return a lexicographic simplicity key for one candidate."""
         params = cv_results["params"][idx]
-
-        # First priority: fewer selected features.
         k_value = params.get("feature_selection__k", 999)
         k_value = 999 if k_value == "all" else int(k_value)
-
-        # Second priority: shallower trees.
         depth = params.get("classifier__max_depth", 999)
         depth = 999 if depth is None else int(depth)
-
-        # Third priority: higher mean validation score.
         negative_score = -float(mean_scores[idx])
-
         return (k_value, depth, negative_score)
 
     selected_idx = min(candidate_indices, key=complexity_key)

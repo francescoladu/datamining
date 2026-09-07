@@ -4,8 +4,6 @@ from typing import Final
 # ============================================================
 # 1. GLOBAL PATHS
 # ============================================================
-# This file lives at code/shared/config.py, so the
-# repository root is two levels up.
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 DATA_DIR: Final[Path] = PROJECT_ROOT / "data"
 CODE_DIR: Final[Path] = PROJECT_ROOT / "code"
@@ -14,6 +12,7 @@ CODE_DIR: Final[Path] = PROJECT_ROOT / "code"
 # 2. GLOBAL DATASET SETTINGS
 # ============================================================
 TARGET_COLUMN: Final[str] = "Result"
+SAMPLE_WEIGHT_COLUMN: Final[str] = "sample_weight"
 
 PHISHING_LABEL: Final[int] = -1
 LEGITIMATE_LABEL: Final[int] = 1
@@ -29,5 +28,4 @@ RANDOM_STATE: Final[int] = 42
 # ============================================================
 # 3. SELECTED MODEL-SELECTION RUN
 # ============================================================
-# Change only this line when the definitive run is chosen.
-SELECTED_RUN_NAME: Final[str] = "k_search_5-10-15-20-25"
+SELECTED_RUN_NAME: Final[str] = "k_search_5-10-15-20-25-all"

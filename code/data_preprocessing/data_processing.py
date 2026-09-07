@@ -1,57 +1,37 @@
-from pathlib import Path
 from collections.abc import Sequence
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 from sklearn.feature_selection import mutual_info_classif
 
 import config
 
 
-# ============================================================
-# 1. DATASET LOADING
-# ============================================================
-
 def load_clean_dataset(
     file_path: str | Path,
     index_columns: Sequence[str] = tuple(config.INDEX_COLUMNS),
 ) -> pd.DataFrame:
-    """
-    Load the deduplicated dataset from a CSV file.
-
-    Drops any index columns that are not real features of the
-    dataset (e.g. leftovers from a previous CSV export).
-    """
+    """Load the deduplicated dataset from a CSV file."""
     file_path = Path(file_path)
-
     if not file_path.exists():
-        raise FileNotFoundError(
-            f"The file '{file_path}' was not found."
-        )
+        raise FileNotFoundError(f"The file '{file_path}' was not found.")
 
     data = pd.read_csv(file_path)
-
     data.drop(
         columns=list(index_columns),
         inplace=True,
         errors="ignore",
     )
-
     return data
 
 
-# ============================================================
-# 2. DATASET VALIDATION
-# ============================================================
 def validate_dataset(
     data: pd.DataFrame,
     target_column: str,
+    weight_column: str = config.SAMPLE_WEIGHT_COLUMN,
 ) -> None:
-    """
-    Check that the dataset can be safely used in the analyses
-    that follow.
-    """
+    """Check that the dataset can be safely used in the analyses that follow."""
     if data.empty:
         raise ValueError("The dataset is empty.")
 
@@ -65,48 +45,31 @@ def validate_dataset(
         config.LEGITIMATE_LABEL,
     }
 
-    actual_labels = set(
-        data[target_column].dropna().unique()
-    )
-
+    actual_labels = set(data[target_column].dropna().unique())
     invalid_labels = actual_labels - allowed_labels
 
     if invalid_labels:
         raise ValueError(
             f"The target column '{target_column}' contains invalid labels: "
-            f"{sorted(invalid_labels)}. "
-            f"Expected only {sorted(allowed_labels)}."
+            f"{sorted(invalid_labels)}. Expected only {sorted(allowed_labels)}."
         )
 
-    duplicated_columns = data.columns[
-        data.columns.duplicated()
-    ].tolist()
-
+    duplicated_columns = data.columns[data.columns.duplicated()].tolist()
     if duplicated_columns:
-        raise ValueError(
-            "Duplicated columns are present: "
-            f"{duplicated_columns}"
-        )
+        raise ValueError(f"Duplicated columns are present: {duplicated_columns}")
 
-    missing_values = int(
-        data.isnull().sum().sum()
-    )
-
+    missing_values = int(data.isnull().sum().sum())
     if missing_values > 0:
-        raise ValueError(
-            f"The dataset contains {missing_values} missing values."
-        )
+        raise ValueError(f"The dataset contains {missing_values} missing values.")
 
     feature_columns = [
         column
         for column in data.columns
-        if column != target_column
+        if column not in (target_column, weight_column)
     ]
 
     if not feature_columns:
-        raise ValueError(
-            "The dataset does not contain any predictive features."
-        )
+        raise ValueError("The dataset does not contain any predictive features.")
 
     non_numeric_features = [
         column
@@ -116,53 +79,37 @@ def validate_dataset(
 
     if non_numeric_features:
         raise TypeError(
-            "Spearman rank correlation requires numeric/ordinal encoded features. "
-            "Non-numeric columns found: "
+            "Features must be numeric. Non-numeric columns found: "
             f"{non_numeric_features}"
         )
 
 
-# ============================================================
-# 3. FEATURE/TARGET SPLIT
-# ============================================================
-
 def split_features_target(
     data: pd.DataFrame,
-    target_column: str,
-) -> tuple[pd.DataFrame, pd.Series]:
-    """
-    Separate the predictive features from the target variable.
+    target_column: str = config.TARGET_COLUMN,
+    weight_column: str = config.SAMPLE_WEIGHT_COLUMN,
+) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """Separate the predictive features from the target variable and sample weights."""
+    drop_cols = [target_column]
+    if weight_column in data.columns:
+        drop_cols.append(weight_column)
+        sample_weight = data[weight_column].astype(float).copy()
+    else:
+        sample_weight = pd.Series(1.0, index=data.index, name=weight_column)
 
-    The target column will not be included in the feature
-    correlation matrix.
-    """
-    X = data.drop(
-        columns=[target_column]
-    ).copy()
-
+    X = data.drop(columns=drop_cols).copy()
     y = data[target_column].copy()
 
-    return X, y
+    return X, y, sample_weight
 
-
-# ============================================================
-# 4. LOAD + VALIDATE + SPLIT 
-# ============================================================
 
 def load_and_prepare_dataset(
     dataset_name: str,
     target_column: str = config.TARGET_COLUMN,
+    weight_column: str = config.SAMPLE_WEIGHT_COLUMN,
     index_columns: Sequence[str] = tuple(config.INDEX_COLUMNS),
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
-    """
-    Load, validate, and split one of the configured dataset
-    splits (e.g. "train" or "test").
-
-    Returns the full DataFrame together with the separated
-    features (X) and target (y), so callers can run both the
-    dataset-level and feature-level analyses without repeating
-    the loading logic.
-    """
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Load, validate, and split one of the configured dataset splits."""
     if dataset_name not in config.DATASET_PATHS:
         raise KeyError(
             f"Unknown dataset '{dataset_name}'. "
@@ -170,7 +117,6 @@ def load_and_prepare_dataset(
         )
 
     file_path = config.DATASET_PATHS[dataset_name]
-
     data = load_clean_dataset(
         file_path=file_path,
         index_columns=index_columns,
@@ -179,99 +125,80 @@ def load_and_prepare_dataset(
     validate_dataset(
         data=data,
         target_column=target_column,
+        weight_column=weight_column,
     )
 
-    X, y = split_features_target(
+    X, y, sample_weight = split_features_target(
         data=data,
         target_column=target_column,
+        weight_column=weight_column,
     )
 
-    return data, X, y
+    return data, X, y, sample_weight
 
-
-# ============================================================
-# 5. GENERAL DATASET STATISTICS
-# ============================================================
 
 def calculate_dataset_statistics(
     data: pd.DataFrame,
     target_column: str,
+    weight_column: str,
     phishing_label: int,
     legitimate_label: int,
 ) -> pd.DataFrame:
-    """
-    Calculate the main descriptive statistics of the clean
-    dataset.
-    """
-    number_of_rows = len(data)
-    number_of_features = len(data.columns) - 1
-
-    class_counts = data[
-        target_column
-    ].value_counts()
-
-    phishing_count = int(
-        class_counts.get(phishing_label, 0)
+    """Calculate descriptive statistics covering both unique profiles and weighted instances."""
+    has_weights = weight_column in data.columns
+    weights = (
+        data[weight_column]
+        if has_weights
+        else pd.Series(1.0, index=data.index)
     )
 
-    legitimate_count = int(
-        class_counts.get(legitimate_label, 0)
+    number_of_profiles = len(data)
+    total_instance_mass = float(weights.sum())
+    number_of_features = len(
+        [c for c in data.columns if c not in (target_column, weight_column)]
     )
 
-    phishing_percentage = (
-        100 * phishing_count / number_of_rows
-        if number_of_rows > 0
+    phishing_mask = data[target_column] == phishing_label
+    legitimate_mask = data[target_column] == legitimate_label
+
+    phishing_profiles = int(phishing_mask.sum())
+    legitimate_profiles = int(legitimate_mask.sum())
+
+    phishing_weighted = float(weights[phishing_mask].sum())
+    legitimate_weighted = float(weights[legitimate_mask].sum())
+
+    phishing_pct = (
+        100 * phishing_weighted / total_instance_mass
+        if total_instance_mass > 0
+        else 0.0
+    )
+    legitimate_pct = (
+        100 * legitimate_weighted / total_instance_mass
+        if total_instance_mass > 0
         else 0.0
     )
 
-    legitimate_percentage = (
-        100 * legitimate_count / number_of_rows
-        if number_of_rows > 0
-        else 0.0
+    imbalance_ratio = (
+        max(phishing_weighted, legitimate_weighted)
+        / min(phishing_weighted, legitimate_weighted)
+        if min(phishing_weighted, legitimate_weighted) > 0
+        else np.nan
     )
-
-    nonzero_counts = class_counts[
-        class_counts > 0
-    ]
-
-    if len(nonzero_counts) >= 2:
-        imbalance_ratio = (
-            nonzero_counts.max()
-            / nonzero_counts.min()
-        )
-    else:
-        imbalance_ratio = np.nan
 
     statistics = pd.DataFrame(
         [
-            ("Observations", number_of_rows),
+            ("Unique feature profiles", number_of_profiles),
+            ("Total weighted instance mass", total_instance_mass),
             ("Predictive features", number_of_features),
+            ("Missing values", int(data.isnull().sum().sum())),
+            ("Phishing profiles (unweighted)", phishing_profiles),
+            ("Legitimate profiles (unweighted)", legitimate_profiles),
+            ("Phishing mass (weighted)", phishing_weighted),
+            ("Phishing (%)", round(phishing_pct, 2)),
+            ("Legitimate mass (weighted)", legitimate_weighted),
+            ("Legitimate (%)", round(legitimate_pct, 2)),
             (
-                "Missing values",
-                int(data.isnull().sum().sum()),
-            ),
-            (
-                "Duplicated rows",
-                int(data.duplicated().sum()),
-            ),
-            (
-                "Phishing observations",
-                phishing_count,
-            ),
-            (
-                "Phishing (%)",
-                round(phishing_percentage, 2),
-            ),
-            (
-                "Legitimate observations",
-                legitimate_count,
-            ),
-            (
-                "Legitimate (%)",
-                round(legitimate_percentage, 2),
-            ),
-            (
-                "Imbalance ratio",
+                "Imbalance ratio (weighted)",
                 round(float(imbalance_ratio), 3)
                 if not np.isnan(imbalance_ratio)
                 else np.nan,
@@ -283,30 +210,20 @@ def calculate_dataset_statistics(
     return statistics
 
 
-# ============================================================
-# 6. CONFLICTING LABEL PROFILES
-# ============================================================
-
 def find_conflicting_profiles(
     data: pd.DataFrame,
     target_column: str,
+    weight_column: str = config.SAMPLE_WEIGHT_COLUMN,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Look for identical feature vectors that are associated with
-    different target labels.
-    """
+    """Look for identical predictor profiles with different labels."""
     feature_columns = [
         column
         for column in data.columns
-        if column != target_column
+        if column not in (target_column, weight_column)
     ]
 
     profile_summary = (
-        data
-        .groupby(
-            feature_columns,
-            dropna=False,
-        )[target_column]
+        data.groupby(feature_columns, dropna=False)[target_column]
         .agg(
             number_of_labels="nunique",
             number_of_rows="count",
@@ -318,23 +235,13 @@ def find_conflicting_profiles(
         profile_summary["number_of_labels"] > 1
     ].copy()
 
-    labels_per_profile = (
-        data
-        .groupby(
-            feature_columns,
-            dropna=False,
-        )[target_column]
-        .transform("nunique")
-    )
+    labels_per_profile = data.groupby(feature_columns, dropna=False)[
+        target_column
+    ].transform("nunique")
 
-    conflicting_rows = data[
-        labels_per_profile > 1
-    ].copy()
-
+    conflicting_rows = data[labels_per_profile > 1].copy()
     conflicting_percentage = (
-        100 * len(conflicting_rows) / len(data)
-        if len(data) > 0
-        else 0.0
+        100 * len(conflicting_rows) / len(data) if len(data) > 0 else 0.0
     )
 
     statistics = pd.DataFrame(
@@ -355,26 +262,15 @@ def find_conflicting_profiles(
         columns=["Statistic", "Value"],
     )
 
-    return (
-        statistics,
-        conflicting_profiles,
-        conflicting_rows,
-    )
+    return statistics, conflicting_profiles, conflicting_rows
 
-
-# ============================================================
-# 7. MUTUAL INFORMATION
-# ============================================================
 
 def calculate_mutual_information(
     X: pd.DataFrame,
     y: pd.Series,
     random_state: int = config.RANDOM_STATE,
 ) -> pd.DataFrame:
-    """
-    Calculate the mutual information between each feature and
-    the target variable.
-    """
+    """Calculate mutual information between discrete features and the target."""
     mutual_information_values = mutual_info_classif(
         X,
         y,
@@ -389,14 +285,10 @@ def calculate_mutual_information(
         }
     )
 
-    results = (
-        results
-        .sort_values(
-            by="Mutual Information",
-            ascending=False,
-        )
-        .reset_index(drop=True)
-    )
+    results = results.sort_values(
+        by="Mutual Information",
+        ascending=False,
+    ).reset_index(drop=True)
 
     results.insert(
         0,
@@ -407,45 +299,19 @@ def calculate_mutual_information(
     return results
 
 
-# ============================================================
-# 8. SPEARMAN RANK CORRELATION MATRIX
-# ============================================================
-
 def calculate_spearman_correlation_matrix(
     X: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    Calculate the Spearman rank correlation matrix between all
-    predictive features (suited for ordinal {-1, 0, 1} variables).
+    """Calculate the Spearman rank correlation matrix between predictive features."""
+    return X.corr(method="spearman")
 
-    The target variable must already have been excluded from X.
-    """
-    correlation_matrix = X.corr(
-        method="spearman"
-    )
-
-    return correlation_matrix
-
-
-# ============================================================
-# 9. STRONGEST CORRELATIONS
-# ============================================================
 
 def find_strongest_correlations(
     correlation_matrix: pd.DataFrame,
     top_n: int = config.TOP_CORRELATIONS_NUMBER,
 ) -> pd.DataFrame:
-    """
-    Return the feature pairs with the highest absolute
-    Spearman correlation.
-
-    Excludes:
-    - the diagonal;
-    - duplicated pairs;
-    - undefined correlations.
-    """
+    """Return the feature pairs with the highest absolute Spearman correlation."""
     feature_names = correlation_matrix.columns.tolist()
-
     correlations = []
 
     for first_index in range(len(feature_names)):
@@ -486,15 +352,9 @@ def find_strongest_correlations(
         )
 
     results = pd.DataFrame(correlations)
-
-    results = (
-        results
-        .sort_values(
-            by="Absolute correlation",
-            ascending=False,
-        )
-        .head(top_n)
-        .reset_index(drop=True)
-    )
+    results = results.sort_values(
+        by="Absolute correlation",
+        ascending=False,
+    ).head(top_n).reset_index(drop=True)
 
     return results

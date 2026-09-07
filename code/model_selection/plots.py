@@ -2,96 +2,47 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
+import numpy as np
+import pandas as pd
 import seaborn as sns
-
 from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
-
-
-DEFAULT_DPI = 300
 
 
 def _save_figure(
     figure: plt.Figure,
     output_pdf_path: str | Path,
 ) -> Path:
-    """Save the report-ready vector PDF without a redundant PNG copy."""
     pdf_path = Path(output_pdf_path)
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
-
-    figure.savefig(
-        pdf_path,
-        format="pdf",
-        bbox_inches="tight",
-    )
-
+    figure.savefig(pdf_path, format="pdf", bbox_inches="tight")
     return pdf_path
 
 
 def plot_nested_cv_comparison(
     nested_scores: pd.DataFrame,
     output_pdf_path: str | Path,
-    model_order: tuple[str, str] = (
-        "Decision Tree",
-        "Random Forest",
-    ),
+    model_order: tuple[str, str] = ("Decision Tree", "Random Forest"),
 ) -> None:
-    """
-    Plot outer-fold macro F1-scores using a standard Tukey boxplot.
-
-    Boxes represent Q1--Q3, the central line is the median,
-    whiskers extend to 1.5 * IQR, and observations outside
-    the whiskers are shown as outliers.
-    """
-    required_columns = {
-        "model",
-        "outer_fold",
-        "macro_f1",
-    }
-
-    missing_columns = required_columns.difference(
-        nested_scores.columns
-    )
-
+    required_columns = {"model", "outer_fold", "macro_f1"}
+    missing_columns = required_columns.difference(nested_scores.columns)
     if nested_scores.empty or missing_columns:
-        raise ValueError(
-            "Invalid nested_scores DataFrame. "
-            f"Missing columns: {sorted(missing_columns)}"
-        )
+        raise ValueError(f"Invalid nested_scores DataFrame. Missing: {sorted(missing_columns)}")
 
     plot_df = nested_scores.loc[
         nested_scores["model"].isin(model_order),
         ["model", "outer_fold", "macro_f1"],
     ].copy()
-
-    plot_df["macro_f1"] = (
-        plot_df["macro_f1"]
-        .astype(float)
-    )
-
-    for model_name in model_order:
-        if not (
-            plot_df["model"] == model_name
-        ).any():
-            raise ValueError(
-                f"No scores found for model: {model_name}"
-            )
+    plot_df["macro_f1"] = plot_df["macro_f1"].astype(float)
 
     model_palette = {
         "Decision Tree": "#4C78A8",
         "Random Forest": "#F58518",
     }
 
-    figure, axis = plt.subplots(
-        figsize=(6.4, 4.3)
-    )
-
+    figure, axis = plt.subplots(figsize=(6.4, 4.3))
     sns.boxplot(
         data=plot_df,
         x="model",
@@ -100,39 +51,16 @@ def plot_nested_cv_comparison(
         order=list(model_order),
         hue_order=list(model_order),
         palette=model_palette,
-
         width=0.42,
-
-        # Standard Tukey whiskers
         whis=1.5,
-
         showmeans=False,
-
-        # Show observations outside 1.5 * IQR
         showfliers=True,
-
         saturation=0.85,
         linewidth=1.4,
-
-        boxprops={
-            "edgecolor": "black",
-        },
-
-        whiskerprops={
-            "color": "black",
-            "linewidth": 1.3,
-        },
-
-        capprops={
-            "color": "black",
-            "linewidth": 1.3,
-        },
-
-        medianprops={
-            "color": "black",
-            "linewidth": 2.0,
-        },
-
+        boxprops={"edgecolor": "black"},
+        whiskerprops={"color": "black", "linewidth": 1.3},
+        capprops={"color": "black", "linewidth": 1.3},
+        medianprops={"color": "black", "linewidth": 2.0},
         flierprops={
             "marker": "o",
             "markerfacecolor": "white",
@@ -141,59 +69,25 @@ def plot_nested_cv_comparison(
             "markersize": 5.5,
             "linestyle": "none",
         },
-
         legend=False,
         ax=axis,
     )
 
-    all_values = (
-        plot_df["macro_f1"]
-        .to_numpy(dtype=float)
-    )
+    all_values = plot_df["macro_f1"].to_numpy(dtype=float)
+    score_range = float(all_values.max() - all_values.min())
+    margin = max(0.004, score_range * 0.08)
 
-    score_range = float(
-        all_values.max() - all_values.min()
-    )
-
-    margin = max(
-        0.004,
-        score_range * 0.08,
-    )
-
-    axis.set_ylim(
-        float(all_values.min() - margin),
-        float(all_values.max() + margin),
-    )
-
+    axis.set_ylim(float(all_values.min() - margin), float(all_values.max() + margin))
     axis.set_xlabel("")
-
-    axis.set_ylabel(
-        "Outer-fold macro F1-score"
-    )
-
-    axis.grid(
-        axis="y",
-        alpha=0.16,
-        linewidth=0.7,
-    )
-
-    axis.grid(
-        axis="x",
-        visible=False,
-    )
-
+    axis.set_ylabel("Outer-fold macro F1-score")
+    axis.grid(axis="y", alpha=0.16, linewidth=0.7)
+    axis.grid(axis="x", visible=False)
     axis.set_axisbelow(True)
-
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
 
     figure.tight_layout()
-
-    _save_figure(
-        figure,
-        output_pdf_path,
-    )
-
+    _save_figure(figure, output_pdf_path)
     plt.close(figure)
 
 
@@ -203,30 +97,13 @@ def plot_selected_feature_ranking(
     *,
     max_display: int = 10,
 ) -> None:
-    """
-    Plot the Mutual Information ranking fitted on the full development set.
-
-    Features selected by the final SelectKBest step are marked with a point at
-    the end of their bar. The figure is suitable for the report's feature-
-    selection section.
-    """
-    required_columns = {
-        "feature",
-        "mutual_information_score",
-        "selected",
-    }
+    required_columns = {"feature", "mutual_information_score", "selected"}
     missing_columns = required_columns.difference(selected_features.columns)
     if selected_features.empty or missing_columns:
-        raise ValueError(
-            "Invalid selected_features DataFrame. "
-            f"Missing columns: {sorted(missing_columns)}"
-        )
-    if max_display <= 0:
-        raise ValueError("max_display must be positive.")
+        raise ValueError(f"Invalid selected_features DataFrame. Missing: {sorted(missing_columns)}")
 
     plot_df = (
-        selected_features
-        .copy()
+        selected_features.copy()
         .sort_values("mutual_information_score", ascending=False)
         .head(max_display)
         .sort_values("mutual_information_score", ascending=True)
@@ -238,12 +115,7 @@ def plot_selected_feature_ranking(
     y_positions = np.arange(len(plot_df))
     scores = plot_df["mutual_information_score"].astype(float).to_numpy()
 
-    axis.barh(
-        y_positions,
-        scores,
-        alpha=0.85,
-    )
-
+    axis.barh(y_positions, scores, alpha=0.85)
     selected_mask = plot_df["selected"].astype(bool).to_numpy()
     if selected_mask.any():
         axis.scatter(
@@ -274,164 +146,58 @@ def plot_hyperparameter_optimization(
     model_name: str,
     max_candidates: int = 15,
 ) -> None:
-    """
-    Plot a 2D hyperparameter-search heatmap.
-
-    Each cell reports the best mean inner-CV macro F1-score obtained
-    among the sampled candidates sharing the corresponding values of
-    feature_selection__k and classifier__max_depth.
-    """
     required_columns = {
         "mean_test_score",
         "param_feature_selection__k",
         "param_classifier__max_depth",
     }
-
-    missing_columns = required_columns.difference(
-        search_results.columns
-    )
-
+    missing_columns = required_columns.difference(search_results.columns)
     if search_results.empty or missing_columns:
-        raise ValueError(
-            "Invalid search_results DataFrame. "
-            f"Missing columns: {sorted(missing_columns)}"
-        )
+        raise ValueError(f"Invalid search_results DataFrame. Missing: {sorted(missing_columns)}")
 
     plot_df = search_results.copy()
-
-    # --------------------------------------------------------
-    # Clean k values
-    # --------------------------------------------------------
-
-    plot_df["k"] = (
-        plot_df["param_feature_selection__k"]
-        .astype(str)
+    plot_df["k"] = plot_df["param_feature_selection__k"].astype(str)
+    plot_df["max_depth"] = plot_df["param_classifier__max_depth"].apply(
+        lambda val: "None" if pd.isna(val) else str(int(float(val)))
     )
-
-    # --------------------------------------------------------
-    # Clean max_depth values
-    # NaN corresponds to max_depth=None
-    # --------------------------------------------------------
-
-    plot_df["max_depth"] = (
-        plot_df["param_classifier__max_depth"]
-        .apply(
-            lambda value: (
-                "None"
-                if pd.isna(value)
-                else str(int(float(value)))
-            )
-        )
-    )
-
-    # --------------------------------------------------------
-    # For each (k, max_depth) combination, keep the best
-    # mean inner-CV score found by the randomized search.
-    # --------------------------------------------------------
 
     heatmap_data = (
-        plot_df
-        .groupby(
-            ["k", "max_depth"],
-            observed=True,
-        )["mean_test_score"]
+        plot_df.groupby(["k", "max_depth"], observed=True)["mean_test_score"]
         .max()
         .unstack("max_depth")
     )
 
-    # --------------------------------------------------------
-    # Sort k values numerically
-    # --------------------------------------------------------
-
     k_order = sorted(
         heatmap_data.index,
-        key=lambda value: (
-            int(value)
-            if value.isdigit()
-            else float("inf")
-        ),
+        key=lambda val: int(val) if val.isdigit() else float("inf"),
     )
-
-    # --------------------------------------------------------
-    # Sort max_depth numerically, with None at the end
-    # --------------------------------------------------------
-
-    depth_values = [
-        value
-        for value in heatmap_data.columns
-        if value != "None"
-    ]
-
-    depth_order = sorted(
-        depth_values,
-        key=int,
-    )
-
+    depth_values = [v for v in heatmap_data.columns if v != "None"]
+    depth_order = sorted(depth_values, key=int)
     if "None" in heatmap_data.columns:
         depth_order.append("None")
 
-    heatmap_data = heatmap_data.reindex(
-        index=k_order,
-        columns=depth_order,
+    heatmap_data = heatmap_data.reindex(index=k_order, columns=depth_order)
+    values = heatmap_data.to_numpy(dtype=float)
+
+    figure, axis = plt.subplots(figsize=(7.2, 5.1))
+    image = axis.imshow(values, aspect="auto", cmap="viridis")
+
+    finite_values = values[np.isfinite(values)]
+    threshold = (
+        (float(finite_values.min()) + float(finite_values.max())) / 2.0
+        if finite_values.size > 0
+        else 0.0
     )
 
-    values = heatmap_data.to_numpy(
-        dtype=float
-    )
-
-    # --------------------------------------------------------
-    # Plot
-    # --------------------------------------------------------
-
-    figure, axis = plt.subplots(
-        figsize=(7.2, 5.1)
-    )
-
-    image = axis.imshow(
-        values,
-        aspect="auto",
-        cmap="viridis",
-    )
-
-    # --------------------------------------------------------
-    # Annotate cells
-    # --------------------------------------------------------
-
-    finite_values = values[
-        np.isfinite(values)
-    ]
-
-    if finite_values.size > 0:
-        threshold = (
-            float(finite_values.min())
-            + float(finite_values.max())
-        ) / 2.0
-    else:
-        threshold = 0.0
-
-    for row_index in range(
-        values.shape[0]
-    ):
-        for column_index in range(
-            values.shape[1]
-        ):
-            score = values[
-                row_index,
-                column_index,
-            ]
-
+    for row_idx in range(values.shape[0]):
+        for col_idx in range(values.shape[1]):
+            score = values[row_idx, col_idx]
             if not np.isfinite(score):
                 continue
-
-            text_color = (
-                "white"
-                if score < threshold
-                else "black"
-            )
-
+            text_color = "white" if score < threshold else "black"
             axis.text(
-                column_index,
-                row_index,
+                col_idx,
+                row_idx,
                 f"{score:.3f}",
                 ha="center",
                 va="center",
@@ -439,86 +205,44 @@ def plot_hyperparameter_optimization(
                 color=text_color,
             )
 
-    # --------------------------------------------------------
-    # Axes
-    # --------------------------------------------------------
+    axis.set_xticks(np.arange(len(depth_order)))
+    axis.set_xticklabels(depth_order)
+    axis.set_yticks(np.arange(len(k_order)))
+    axis.set_yticklabels(k_order)
+    axis.set_xlabel(f"{model_name} max depth")
+    axis.set_ylabel("Number of selected features (k)")
+    axis.set_title(f"{model_name} hyperparameter optimization")
 
-    axis.set_xticks(
-        np.arange(
-            len(depth_order)
-        )
-    )
-
-    axis.set_xticklabels(
-        depth_order
-    )
-
-    axis.set_yticks(
-        np.arange(
-            len(k_order)
-        )
-    )
-
-    axis.set_yticklabels(
-        k_order
-    )
-
-    axis.set_xlabel(
-        "Random Forest max depth"
-    )
-
-    axis.set_ylabel(
-        "Number of selected features (k)"
-    )
-
-    axis.set_title(
-        f"{model_name} hyperparameter optimization"
-    )
-
-    # --------------------------------------------------------
-    # Color bar
-    # --------------------------------------------------------
-
-    colorbar = figure.colorbar(
-        image,
-        ax=axis,
-        pad=0.03,
-    )
-
-    colorbar.set_label(
-        "Best mean inner-CV macro F1-score"
-    )
+    colorbar = figure.colorbar(image, ax=axis, pad=0.03)
+    colorbar.set_label("Best mean inner-CV macro F1-score")
 
     figure.tight_layout()
-
-    _save_figure(
-        figure,
-        output_pdf_path,
-    )
-
-    plt.close(
-        figure
-    )
+    _save_figure(figure, output_pdf_path)
+    plt.close(figure)
 
 
 def plot_final_test_confusion_matrix(
     final_test_predictions: pd.DataFrame,
     output_pdf_path: str | Path,
 ) -> None:
-    """Plot the final held-out test confusion matrix using phishing as positive."""
+    """Plot the final held-out test confusion matrix with weighted instance counts."""
     required_columns = {"y_true", "y_pred"}
     missing_columns = required_columns.difference(final_test_predictions.columns)
     if final_test_predictions.empty or missing_columns:
-        raise ValueError(
-            "Invalid final_test_predictions DataFrame. "
-            f"Missing columns: {sorted(missing_columns)}"
-        )
+        raise ValueError(f"Invalid final_test_predictions DataFrame. Missing: {sorted(missing_columns)}")
 
     labels = [-1, 1]
+    weights = (
+        final_test_predictions["sample_weight"]
+        if "sample_weight" in final_test_predictions.columns
+        else None
+    )
+
     matrix = confusion_matrix(
         final_test_predictions["y_true"],
         final_test_predictions["y_pred"],
         labels=labels,
+        sample_weight=weights,
     )
 
     row_totals = matrix.sum(axis=1, keepdims=True)
@@ -531,7 +255,7 @@ def plot_final_test_confusion_matrix(
 
     figure, axis = plt.subplots(figsize=(5.4, 4.8))
     image = axis.imshow(matrix, cmap="Blues")
-    figure.colorbar(image, ax=axis, fraction=0.046, pad=0.04, label="Count")
+    figure.colorbar(image, ax=axis, fraction=0.046, pad=0.04, label="Weighted Mass")
 
     display_labels = ["Phishing (-1)", "Legitimate (1)"]
     axis.set_xticks([0, 1], display_labels)
@@ -542,12 +266,12 @@ def plot_final_test_confusion_matrix(
     threshold = float(matrix.max()) / 2.0 if matrix.size else 0.0
     for row in range(matrix.shape[0]):
         for column in range(matrix.shape[1]):
-            count = int(matrix[row, column])
+            count = matrix[row, column]
             percentage = row_percentages[row, column] * 100.0
             axis.text(
                 column,
                 row,
-                f"{count}\n{percentage:.1f}%",
+                f"{count:.0f}\n{percentage:.1f}%",
                 ha="center",
                 va="center",
                 color="white" if count > threshold else "black",
@@ -563,34 +287,27 @@ def plot_final_test_roc_curve(
     final_test_predictions: pd.DataFrame,
     output_pdf_path: str | Path,
 ) -> float:
-    """
-    Plot the final held-out test ROC curve and return its AUC.
-
-    Phishing (-1) is treated as the positive class.
-    """
+    """Plot the weighted ROC curve for final test evaluation."""
     required_columns = {"y_true", "phishing_probability"}
     missing_columns = required_columns.difference(final_test_predictions.columns)
     if final_test_predictions.empty or missing_columns:
-        raise ValueError(
-            "Invalid final_test_predictions DataFrame. "
-            f"Missing columns: {sorted(missing_columns)}"
-        )
+        raise ValueError(f"Invalid final_test_predictions DataFrame. Missing: {sorted(missing_columns)}")
 
-    y_true_binary = (
-        final_test_predictions["y_true"].to_numpy() == -1
-    ).astype(int)
-    probabilities = (
-        final_test_predictions["phishing_probability"]
-        .astype(float)
-        .to_numpy()
+    y_true_binary = (final_test_predictions["y_true"].to_numpy() == -1).astype(int)
+    probabilities = final_test_predictions["phishing_probability"].astype(float).to_numpy()
+    weights = (
+        final_test_predictions["sample_weight"].to_numpy()
+        if "sample_weight" in final_test_predictions.columns
+        else None
     )
 
     false_positive_rate, true_positive_rate, _ = roc_curve(
         y_true_binary,
         probabilities,
+        sample_weight=weights,
     )
     auc_value = float(
-        roc_auc_score(y_true_binary, probabilities)
+        roc_auc_score(y_true_binary, probabilities, sample_weight=weights)
     )
 
     figure, axis = plt.subplots(figsize=(5.6, 4.8))
@@ -600,13 +317,7 @@ def plot_final_test_roc_curve(
         linewidth=1.8,
         label=f"Final model (AUC = {auc_value:.3f})",
     )
-    axis.plot(
-        [0.0, 1.0],
-        [0.0, 1.0],
-        linestyle="--",
-        linewidth=1.0,
-        label="Random classifier",
-    )
+    axis.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", linewidth=1.0, label="Random classifier")
 
     axis.set_xlim(0.0, 1.0)
     axis.set_ylim(0.0, 1.02)
