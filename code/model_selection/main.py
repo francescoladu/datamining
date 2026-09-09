@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-from shared.config import SELECTED_RUN_NAME
 
 
 module_dir = Path(__file__).resolve().parent
@@ -41,7 +40,7 @@ from model_selection.summaries import (
 )
 from model_selection.utils import select_by_one_se_rule
 from shared.modeling import load_clean_dataset
-
+from shared.config import SELECTED_RUN_NAME
 
 def save_csv(
     dataframe: pd.DataFrame,
@@ -505,9 +504,7 @@ def main() -> None:
             experiment_id="EXPERIMENT 1",
             experiment_name="Baseline - Raw Data",
             dataset_variant=(
-                "Raw observations from the common "
-                "development profile partition; "
-                "no deduplication"
+                "Original dataset without deduplication"
             ),
             X_dev=X_dev,
             y_dev=y_dev,
@@ -543,9 +540,8 @@ def main() -> None:
             experiment_id="EXPERIMENT 2",
             experiment_name="Standard Deduplication",
             dataset_variant=(
-                "Common development profile partition "
-                "after removing exact duplicates with "
-                "identical features and identical target"
+                 "Dataset obtained by retaining one observation "
+                 "for each identical feature-vector and target-label combination"
             ),
             X_dev=X_dev,
             y_dev=y_dev,

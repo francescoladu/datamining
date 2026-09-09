@@ -53,20 +53,22 @@ export PYTHONPATH := code
 	evaluate1 \
 	evaluate2 \
 	evaluate3 \
-	explain \
+	explain1 \
+	explain2 \
+	explain3 \
 	clean \
 	_install \
 	_analyze \
 	_train \
 	_evaluate \
+	_explain \
 	check-venv \
 	check-experiment \
 	check-selected-train-data \
 	check-selected-data \
-	check-exp3-data \
 	experiment1 \
 	experiment2 \
-	experiment3 \
+	experiment3
 
 
 # -----------------------------------------------------------------------------
@@ -101,7 +103,9 @@ help:
 	@printf "  %-22s %s\n" "make evaluate1" "Evaluate Experiment 1 on its held-out test set."
 	@printf "  %-22s %s\n" "make evaluate2" "Evaluate Experiment 2 on its held-out test set."
 	@printf "  %-22s %s\n" "make evaluate3" "Evaluate Experiment 3 on its held-out test set."
-	@printf "  %-22s %s\n" "make explain" "Run explainability for Experiment 3."
+	@printf "  %-22s %s\n" "make explain1" "Run explainability for Experiment 1."
+	@printf "  %-22s %s\n" "make explain2" "Run explainability for Experiment 2."
+	@printf "  %-22s %s\n" "make explain3" "Run explainability for Experiment 3."
 	@printf "  %-22s %s\n" "make clean" "Remove datasets and generated outputs; preserve the venv."
 	@printf "  %-22s %s\n" "make experiment1" "Run the complete pipeline for Experiment 1."
 	@printf "  %-22s %s\n" "make experiment2" "Run the complete pipeline for Experiment 2."
@@ -200,15 +204,6 @@ check-selected-data: check-experiment
 	fi
 
 
-check-exp3-data:
-	@if [ ! -f "$(EXP3_TRAIN)" ] || [ ! -f "$(EXP3_TEST)" ]; then \
-		echo "ERROR: Experiment 3 cleaned train/test data not found."; \
-		echo "Run first:"; \
-		echo "  make install3"; \
-		exit 1; \
-	fi
-
-
 # -----------------------------------------------------------------------------
 # Dataset download and extraction
 # -----------------------------------------------------------------------------
@@ -219,8 +214,6 @@ $(ZIP_FILE):
 	@curl -fL -sS "$(URL)" -o "$(ZIP_FILE)"
 
 
-# Keep the ZIP after extraction so the stamp remains newer than its dependency
-# and repeated install commands do not trigger a new download/extraction.
 $(STAMP_FILE): $(ZIP_FILE) | check-venv
 	@echo "Extracting dataset to $(DATA_DIR)/..."
 	@"$(PYTHON)" -m zipfile -e "$(ZIP_FILE)" "$(DATA_DIR)"
@@ -254,10 +247,6 @@ _install: check-venv check-experiment $(STAMP_FILE)
 
 # -----------------------------------------------------------------------------
 # Exploratory Data Analysis
-#
-# EDA always uses the training/development split of the selected experiment.
-# Outputs are saved by data_preprocessing.main in a separate directory for
-# each experiment.
 # -----------------------------------------------------------------------------
 
 analyze1:
@@ -321,16 +310,23 @@ _evaluate: check-venv check-selected-data
 
 # -----------------------------------------------------------------------------
 # Explainability
-#
-# Explainability currently refers to Experiment 3 only.
 # -----------------------------------------------------------------------------
 
-explain: check-venv check-exp3-data
+explain1:
+	@$(MAKE) --no-print-directory _explain EXPERIMENT=1
+
+explain2:
+	@$(MAKE) --no-print-directory _explain EXPERIMENT=2
+
+explain3:
+	@$(MAKE) --no-print-directory _explain EXPERIMENT=3
+
+
+_explain: check-venv check-selected-data
 	@echo "------------------------------------------------------------"
-	@echo "Running Explainability pipeline for Experiment 3..."
-	@echo "Using SELECTED_RUN_NAME from code/shared/config.py"
+	@echo "Running Explainability - Experiment $(EXPERIMENT)"
 	@echo "------------------------------------------------------------"
-	@"$(PYTHON)" -m explainability.main
+	@"$(PYTHON)" -m explainability.main "$(EXPERIMENT)"
 
 
 # -----------------------------------------------------------------------------
@@ -345,6 +341,7 @@ experiment1:
 	@$(MAKE) --no-print-directory analyze1
 	@$(MAKE) --no-print-directory train1
 	@$(MAKE) --no-print-directory evaluate1
+	@$(MAKE) --no-print-directory explain1
 	@echo "============================================================"
 	@echo "EXPERIMENT 1 PIPELINE COMPLETED SUCCESSFULLY"
 	@echo "============================================================"
@@ -358,6 +355,7 @@ experiment2:
 	@$(MAKE) --no-print-directory analyze2
 	@$(MAKE) --no-print-directory train2
 	@$(MAKE) --no-print-directory evaluate2
+	@$(MAKE) --no-print-directory explain2
 	@echo "============================================================"
 	@echo "EXPERIMENT 2 PIPELINE COMPLETED SUCCESSFULLY"
 	@echo "============================================================"
@@ -371,10 +369,11 @@ experiment3:
 	@$(MAKE) --no-print-directory analyze3
 	@$(MAKE) --no-print-directory train3
 	@$(MAKE) --no-print-directory evaluate3
-	@$(MAKE) --no-print-directory explain
+	@$(MAKE) --no-print-directory explain3
 	@echo "============================================================"
 	@echo "EXPERIMENT 3 PIPELINE COMPLETED SUCCESSFULLY"
 	@echo "============================================================"
+
 
 # -----------------------------------------------------------------------------
 # Cleanup
