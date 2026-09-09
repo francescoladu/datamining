@@ -92,7 +92,7 @@ def run_permutation_importance_plot(
     )
 
     axis.set_xlabel(
-        "Mean decrease in macro F1-score"
+        "Mean decrease in accuracy"
     )
 
     axis.set_ylabel(

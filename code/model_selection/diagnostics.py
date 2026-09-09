@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from model_selection import config
+from shared.config import PHISHING_LABEL
 
 
 def build_error_summary(predictions: pd.DataFrame) -> pd.DataFrame:
@@ -21,14 +22,14 @@ def build_error_summary(predictions: pd.DataFrame) -> pd.DataFrame:
             else np.ones(len(frame))
         )
 
-        tp_mask = (y_true == -1) & (y_pred == -1)
-        fn_mask = (y_true == -1) & (y_pred != -1)
-        fp_mask = (y_true != -1) & (y_pred == -1)
-        tn_mask = (y_true != -1) & (y_pred != -1)
+        tp_mask = (y_true == PHISHING_LABEL) & (y_pred == PHISHING_LABEL)
+        fn_mask = (y_true == PHISHING_LABEL) & (y_pred != PHISHING_LABEL)
+        fp_mask = (y_true != PHISHING_LABEL) & (y_pred == PHISHING_LABEL)
+        tn_mask = (y_true != PHISHING_LABEL) & (y_pred != PHISHING_LABEL)
         err_mask = ~frame["correct"].to_numpy()
 
-        weighted_pos = weights[y_true == -1].sum()
-        weighted_neg = weights[y_true != -1].sum()
+        weighted_pos = weights[y_true == PHISHING_LABEL].sum()
+        weighted_neg = weights[y_true != PHISHING_LABEL].sum()
         weighted_total = weights.sum()
 
         fn_weighted = weights[fn_mask].sum()
@@ -39,7 +40,7 @@ def build_error_summary(predictions: pd.DataFrame) -> pd.DataFrame:
             {
                 "model": model_name,
                 "unique_profiles": len(frame),
-                "weighted_instances": float(weighted_total),
+                "retained_weighted_instances": float(weighted_total),
                 "true_positive_phishing_mass": float(weights[tp_mask].sum()),
                 "false_negative_mass": float(fn_weighted),
                 "false_positive_mass": float(fp_weighted),

@@ -1,11 +1,17 @@
 # Import global configurations from shared module
-from shared.config import RANDOM_STATE
+# Fix 2: Import FEATURE_SELECTION_K_VALUES from shared.config so modifying it in one place updates all downstream scripts automatically
+# Import global configurations from shared module
+from shared.config import (
+    DATA_DIR,
+    FEATURE_SELECTION_K_VALUES,
+    RANDOM_STATE,
+)
 
 # ===========================================================================
 # 1. GENERAL SETTINGS
 # ===========================================================================
 
-PRIMARY_SCORING = "f1_macro"
+PRIMARY_SCORING = "accuracy"
 
 # Compute permutation importance on every untouched outer validation fold.
 COMPUTE_PERMUTATION_IMPORTANCE = True
@@ -17,16 +23,6 @@ HIGH_CONFIDENCE_THRESHOLD = 0.80
 # Cross Validation Split settings (To be passed into StratifiedKFold in engine.py)
 N_OUTER_SPLITS = 10
 N_INNER_SPLITS = 5
-
-# ---------------------------------------------------------------------------
-# FEATURE-SELECTION EXPERIMENT
-# ---------------------------------------------------------------------------
-# Treat the number of selected features as an inner-CV hyperparameter.
-# Including "all" lets CV choose no feature reduction when that generalizes best.
-
-#FEATURE_SELECTION_K_VALUES = ["all"]
-FEATURE_SELECTION_K_VALUES = [5, 10, 15, 20, 25, "all"]
-
 
 # Number of configurations sampled by RandomizedSearchCV for Random Forest.
 N_RANDOM_ITERATIONS = 30 * len(FEATURE_SELECTION_K_VALUES)
@@ -58,3 +54,8 @@ random_forest_param_distributions = {
     "classifier__max_features": ["sqrt", "log2", 0.5, None],
     "classifier__bootstrap": [True, False],
 }
+
+# Fix 3: changed the rooting to the training csv
+RAW_DEVELOPMENT_PATH = DATA_DIR / "experiment_1_raw_train.csv"
+STANDARD_DEDUP_DEVELOPMENT_PATH = DATA_DIR / "experiment_2_standard_dedup_train.csv"
+WEIGHTED_DEVELOPMENT_PATH = DATA_DIR / "train_cleaned.csv"

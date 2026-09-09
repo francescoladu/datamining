@@ -58,3 +58,4 @@ def create_output_directories() -> None:
     """Create the global/local explainability output hierarchy."""
     for directory in (GLOBAL_OUTPUT_DIR, LOCAL_OUTPUT_DIR):
         directory.mkdir(parents=True, exist_ok=True)
+

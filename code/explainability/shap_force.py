@@ -542,3 +542,4 @@ def run_shap_force(
         "summary": summary_df,
         "pdf_path": pdf_path if SAVE_PDF else None,
     }
+

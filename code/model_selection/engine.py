@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.inspection import permutation_importance
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
 
@@ -15,6 +16,7 @@ from model_selection.utils import (
     select_by_one_se_rule,
     select_rows,
 )
+from shared.config import PHISHING_LABEL
 from shared.modeling import build_pipeline
 
 
@@ -33,6 +35,65 @@ final_inner_cv = StratifiedKFold(
 decision_tree_pipeline = build_pipeline("Decision Tree")
 random_forest_pipeline = build_pipeline("Random Forest")
 
+class IndexedWeightedAccuracy:
+    """
+    Weighted accuracy scorer for cross-validation.
+
+    Validation weights are aligned using the pandas indices
+    preserved inside each cross-validation fold.
+    """
+
+    def __init__(self, sample_weight: pd.Series):
+        self.sample_weight = sample_weight.astype(float).copy()
+
+        if not self.sample_weight.index.is_unique:
+            raise ValueError(
+                "Sample-weight indices must be unique."
+            )
+
+    def __call__(
+        self,
+        estimator: Pipeline,
+        X: pd.DataFrame,
+        y_true: Any,
+    ) -> float:
+        if not hasattr(X, "index"):
+            raise TypeError(
+                "Weighted scoring requires X to preserve pandas indices."
+            )
+
+        fold_weights = self.sample_weight.reindex(X.index)
+
+        if fold_weights.isna().any():
+            raise ValueError(
+                "Could not align sample weights with the validation fold."
+            )
+
+        y_pred = estimator.predict(X)
+
+        return float(
+            accuracy_score(
+                y_true,
+                y_pred,
+                sample_weight=fold_weights.to_numpy(),
+            )
+        )
+
+
+def make_weighted_accuracy_scorer(
+    X: pd.DataFrame,
+    sample_weight: Any,
+) -> IndexedWeightedAccuracy:
+    """
+    Build an index-aware weighted-accuracy scorer.
+    """
+    weights = pd.Series(
+        np.asarray(sample_weight, dtype=float),
+        index=X.index,
+        name="sample_weight",
+    )
+
+    return IndexedWeightedAccuracy(weights)
 
 def _extract_prediction_rows(
     *,
@@ -53,7 +114,7 @@ def _extract_prediction_rows(
     weights = np.asarray(w_outer_validation)
 
     predicted_confidence = np.where(
-        y_pred == -1,
+        y_pred == PHISHING_LABEL,
         phishing_probability,
         1.0 - phishing_probability,
     )
@@ -75,11 +136,11 @@ def _extract_prediction_rows(
         weights,
     ):
         correct = bool(truth == pred)
-        if truth == -1 and pred == -1:
+        if truth == PHISHING_LABEL and pred == PHISHING_LABEL:
             error_type = "true_positive_phishing"
-        elif truth != -1 and pred != -1:
+        elif truth != PHISHING_LABEL and pred != PHISHING_LABEL:
             error_type = "true_negative_legitimate"
-        elif truth == -1 and pred != -1:
+        elif truth == PHISHING_LABEL and pred != PHISHING_LABEL:
             error_type = "false_negative"
         else:
             error_type = "false_positive"
@@ -150,12 +211,15 @@ def nested_cross_validation(
         fit_params = {
             "classifier__sample_weight": np.asarray(w_outer_train),
         }
-
+        inner_accuracy_scorer = make_weighted_accuracy_scorer(
+            X_outer_train,
+            w_outer_train,
+        )
         if search_method == "grid":
             inner_search: GridSearchCV | RandomizedSearchCV = GridSearchCV(
                 estimator=pipeline,
                 param_grid=search_space,
-                scoring=config.PRIMARY_SCORING,
+                scoring=inner_accuracy_scorer,
                 cv=inner_cv,
                 refit=select_by_one_se_rule,
                 n_jobs=-1,
@@ -167,7 +231,7 @@ def nested_cross_validation(
                 estimator=pipeline,
                 param_distributions=search_space,
                 n_iter=n_random_iterations,
-                scoring=config.PRIMARY_SCORING,
+                scoring=inner_accuracy_scorer,
                 cv=inner_cv,
                 refit=select_by_one_se_rule,
                 random_state=config.RANDOM_STATE + outer_fold,
@@ -181,10 +245,10 @@ def nested_cross_validation(
         inner_search.fit(X_outer_train, y_outer_train, **fit_params)
 
         selected_index = inner_search.best_index_
-        selected_inner_macro_f1 = float(
+        selected_inner_accuracy = float(
             inner_search.cv_results_["mean_test_score"][selected_index]
         )
-        max_inner_macro_f1 = float(
+        max_inner_accuracy = float(
             np.max(inner_search.cv_results_["mean_test_score"])
         )
 
@@ -207,8 +271,8 @@ def nested_cross_validation(
                 "outer_fold": outer_fold,
                 "selected_k": selected_k,
                 "selected_feature_count": selected_feature_count,
-                "inner_selected_macro_f1": selected_inner_macro_f1,
-                "inner_max_macro_f1": max_inner_macro_f1,
+                "inner_selected_accuracy": selected_inner_accuracy,
+                "inner_max_accuracy": max_inner_accuracy,
                 **metrics,
             }
         )
@@ -226,11 +290,16 @@ def nested_cross_validation(
         )
 
         if config.COMPUTE_PERMUTATION_IMPORTANCE:
+            outer_accuracy_scorer = make_weighted_accuracy_scorer(
+                X_outer_validation,
+                w_outer_validation,
+            )
+
             permutation_result = permutation_importance(
                 best_pipeline,
                 X_outer_validation,
                 y_outer_validation,
-                scoring=config.PRIMARY_SCORING,
+                scoring=outer_accuracy_scorer,
                 n_repeats=config.PERMUTATION_N_REPEATS,
                 random_state=config.RANDOM_STATE + outer_fold,
                 n_jobs=-1,
@@ -254,8 +323,8 @@ def nested_cross_validation(
                     }
                 )
 
-        print(f"  Selected inner macro F1: {selected_inner_macro_f1:.4f}")
-        print(f"  Outer macro F1: {metrics['macro_f1']:.4f}")
+        print(f"  Selected inner accuracy: {selected_inner_accuracy:.4f}")
+        print(f"  Outer accuracy: {metrics['accuracy']:.4f}")
         print(f"  Selected k: {selected_k}")
         print(f"  Selected parameters: {inner_search.best_params_}\n")
 

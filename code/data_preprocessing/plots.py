@@ -23,7 +23,7 @@ def plot_feature_histograms_by_class(
     """
     Plot compact class-conditional distributions for all features.
 
-    If weight_column is provided, frequencies reflect true instance mass.
+    If weight_column is provided, frequencies reflect retained weighted support mass.
     """
     if target_column not in data.columns:
         raise ValueError(f"Missing target column: {target_column}")

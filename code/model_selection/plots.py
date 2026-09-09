@@ -26,16 +26,16 @@ def plot_nested_cv_comparison(
     output_pdf_path: str | Path,
     model_order: tuple[str, str] = ("Decision Tree", "Random Forest"),
 ) -> None:
-    required_columns = {"model", "outer_fold", "macro_f1"}
+    required_columns = {"model", "outer_fold", "accuracy"}
     missing_columns = required_columns.difference(nested_scores.columns)
     if nested_scores.empty or missing_columns:
         raise ValueError(f"Invalid nested_scores DataFrame. Missing: {sorted(missing_columns)}")
 
     plot_df = nested_scores.loc[
         nested_scores["model"].isin(model_order),
-        ["model", "outer_fold", "macro_f1"],
+        ["model", "outer_fold", "accuracy"],
     ].copy()
-    plot_df["macro_f1"] = plot_df["macro_f1"].astype(float)
+    plot_df["accuracy"] = plot_df["accuracy"].astype(float)
 
     model_palette = {
         "Decision Tree": "#4C78A8",
@@ -46,7 +46,7 @@ def plot_nested_cv_comparison(
     sns.boxplot(
         data=plot_df,
         x="model",
-        y="macro_f1",
+        y="accuracy",
         hue="model",
         order=list(model_order),
         hue_order=list(model_order),
@@ -73,13 +73,13 @@ def plot_nested_cv_comparison(
         ax=axis,
     )
 
-    all_values = plot_df["macro_f1"].to_numpy(dtype=float)
+    all_values = plot_df["accuracy"].to_numpy(dtype=float)
     score_range = float(all_values.max() - all_values.min())
     margin = max(0.004, score_range * 0.08)
 
     axis.set_ylim(float(all_values.min() - margin), float(all_values.max() + margin))
     axis.set_xlabel("")
-    axis.set_ylabel("Outer-fold macro F1-score")
+    axis.set_ylabel("Outer-fold accuracy")
     axis.grid(axis="y", alpha=0.16, linewidth=0.7)
     axis.grid(axis="x", visible=False)
     axis.set_axisbelow(True)
@@ -142,9 +142,7 @@ def plot_selected_feature_ranking(
 def plot_hyperparameter_optimization(
     search_results: pd.DataFrame,
     output_pdf_path: str | Path,
-    *,
     model_name: str,
-    max_candidates: int = 15,
 ) -> None:
     required_columns = {
         "mean_test_score",
@@ -214,7 +212,7 @@ def plot_hyperparameter_optimization(
     axis.set_title(f"{model_name} hyperparameter optimization")
 
     colorbar = figure.colorbar(image, ax=axis, pad=0.03)
-    colorbar.set_label("Best mean inner-CV macro F1-score")
+    colorbar.set_label("Best mean inner-CV accuracy")
 
     figure.tight_layout()
     _save_figure(figure, output_pdf_path)

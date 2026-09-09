@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 # ============================================================
 # 1. GLOBAL PATHS
@@ -26,6 +26,20 @@ EXPECTED_LABELS: Final[set[int]] = {
 RANDOM_STATE: Final[int] = 42
 
 # ============================================================
-# 3. SELECTED MODEL-SELECTION RUN
+# 3. FEATURE SELECTION & RUN CONFIGURATION (SINGLE SOURCE OF TRUTH)
 # ============================================================
-SELECTED_RUN_NAME: Final[str] = "k_search_5-10-15-20-25-all"
+
+# Fix 1: Define FEATURE_SELECTION_K_VALUES and build_run_tag in shared/config.py so all modules use the same dynamic run name
+
+FEATURE_SELECTION_K_VALUES: list[Any] = [5, 10, 15, 20, 25, "all"]
+
+
+def build_run_tag(k_values: list[Any]) -> str:
+    """Build a filesystem-safe feature-selection run name."""
+    labels = [str(value).lower() for value in k_values]
+    if len(labels) == 1:
+        return f"k_{labels[0]}"
+    return "k_search_" + "-".join(labels)
+
+
+SELECTED_RUN_NAME: Final[str] = build_run_tag(FEATURE_SELECTION_K_VALUES)

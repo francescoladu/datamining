@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_selection import mutual_info_classif
 
-import config
+from data_preprocessing import config
 
 
 def load_clean_dataset(
@@ -104,19 +104,13 @@ def split_features_target(
 
 
 def load_and_prepare_dataset(
-    dataset_name: str,
+    file_path: str | Path,
     target_column: str = config.TARGET_COLUMN,
     weight_column: str = config.SAMPLE_WEIGHT_COLUMN,
     index_columns: Sequence[str] = tuple(config.INDEX_COLUMNS),
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
-    """Load, validate, and split one of the configured dataset splits."""
-    if dataset_name not in config.DATASET_PATHS:
-        raise KeyError(
-            f"Unknown dataset '{dataset_name}'. "
-            f"Available options: {list(config.DATASET_PATHS)}"
-        )
+    """Load, validate, and split one configured training dataset."""
 
-    file_path = config.DATASET_PATHS[dataset_name]
     data = load_clean_dataset(
         file_path=file_path,
         index_columns=index_columns,
@@ -144,67 +138,149 @@ def calculate_dataset_statistics(
     phishing_label: int,
     legitimate_label: int,
 ) -> pd.DataFrame:
-    """Calculate descriptive statistics covering both unique profiles and weighted instances."""
+    """
+    Calculate descriptive statistics that are comparable
+    across all three experiments.
+    """
+
+    feature_columns = [
+        column
+        for column in data.columns
+        if column not in (target_column, weight_column)
+    ]
+
     has_weights = weight_column in data.columns
+
     weights = (
-        data[weight_column]
+        data[weight_column].astype(float)
         if has_weights
         else pd.Series(1.0, index=data.index)
     )
 
-    number_of_profiles = len(data)
-    total_instance_mass = float(weights.sum())
-    number_of_features = len(
-        [c for c in data.columns if c not in (target_column, weight_column)]
+    number_of_rows = len(data)
+
+    number_of_unique_profiles = len(
+        data[feature_columns].drop_duplicates()
     )
 
-    phishing_mask = data[target_column] == phishing_label
-    legitimate_mask = data[target_column] == legitimate_label
+    total_instance_mass = float(
+        weights.sum()
+    )
 
-    phishing_profiles = int(phishing_mask.sum())
-    legitimate_profiles = int(legitimate_mask.sum())
+    number_of_features = len(
+        feature_columns
+    )
 
-    phishing_weighted = float(weights[phishing_mask].sum())
-    legitimate_weighted = float(weights[legitimate_mask].sum())
+    phishing_mask = (
+        data[target_column] == phishing_label
+    )
+
+    legitimate_mask = (
+        data[target_column] == legitimate_label
+    )
+
+    phishing_rows = int(
+        phishing_mask.sum()
+    )
+
+    legitimate_rows = int(
+        legitimate_mask.sum()
+    )
+
+    phishing_weighted = float(
+        weights[phishing_mask].sum()
+    )
+
+    legitimate_weighted = float(
+        weights[legitimate_mask].sum()
+    )
 
     phishing_pct = (
         100 * phishing_weighted / total_instance_mass
         if total_instance_mass > 0
         else 0.0
     )
+
     legitimate_pct = (
         100 * legitimate_weighted / total_instance_mass
         if total_instance_mass > 0
         else 0.0
     )
 
+    minimum_class_mass = min(
+        phishing_weighted,
+        legitimate_weighted,
+    )
+
     imbalance_ratio = (
-        max(phishing_weighted, legitimate_weighted)
-        / min(phishing_weighted, legitimate_weighted)
-        if min(phishing_weighted, legitimate_weighted) > 0
+        max(
+            phishing_weighted,
+            legitimate_weighted,
+        )
+        / minimum_class_mass
+        if minimum_class_mass > 0
         else np.nan
     )
 
     statistics = pd.DataFrame(
         [
-            ("Unique feature profiles", number_of_profiles),
-            ("Total weighted instance mass", total_instance_mass),
-            ("Predictive features", number_of_features),
-            ("Missing values", int(data.isnull().sum().sum())),
-            ("Phishing profiles (unweighted)", phishing_profiles),
-            ("Legitimate profiles (unweighted)", legitimate_profiles),
-            ("Phishing mass (weighted)", phishing_weighted),
-            ("Phishing (%)", round(phishing_pct, 2)),
-            ("Legitimate mass (weighted)", legitimate_weighted),
-            ("Legitimate (%)", round(legitimate_pct, 2)),
             (
-                "Imbalance ratio (weighted)",
-                round(float(imbalance_ratio), 3)
-                if not np.isnan(imbalance_ratio)
-                else np.nan,
+                "Rows",
+                number_of_rows,
+            ),
+            (
+                "Unique feature profiles",
+                number_of_unique_profiles,
+            ),
+            (
+                "Total observation mass",
+                total_instance_mass,
+            ),
+            (
+                "Predictive features",
+                number_of_features,
+            ),
+            (
+                "Missing values",
+                int(data.isnull().sum().sum()),
+            ),
+            (
+                "Phishing rows (unweighted)",
+                phishing_rows,
+            ),
+            (
+                "Legitimate rows (unweighted)",
+                legitimate_rows,
+            ),
+            (
+                "Phishing observation mass",
+                phishing_weighted,
+            ),
+            (
+                "Phishing (%)",
+                round(phishing_pct, 2),
+            ),
+            (
+                "Legitimate observation mass",
+                legitimate_weighted,
+            ),
+            (
+                "Legitimate (%)",
+                round(legitimate_pct, 2),
+            ),
+            (
+                "Imbalance ratio",
+                (
+                    round(float(imbalance_ratio), 3)
+                    if not np.isnan(imbalance_ratio)
+                    else np.nan
+                ),
             ),
         ],
-        columns=["Statistic", "Value"],
+        columns=[
+            "Statistic",
+            "Value",
+        ],
     )
 
     return statistics

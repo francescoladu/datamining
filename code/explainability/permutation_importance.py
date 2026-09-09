@@ -83,3 +83,4 @@ def run_permutation_importance(model_name: str) -> pd.DataFrame:
         f"\n{PERMUTATION_SUMMARY_SOURCE_PATH}"
     )
     return importance_df
+

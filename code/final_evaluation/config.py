@@ -32,3 +32,4 @@ def create_output_directories() -> None:
     """Create the final-evaluation output hierarchy."""
     for directory in (METRICS_DIR, DIAGNOSTICS_DIR, FIGURES_DIR):
         directory.mkdir(parents=True, exist_ok=True)
+

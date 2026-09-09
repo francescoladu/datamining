@@ -1,69 +1,10 @@
 from __future__ import annotations
 
-from itertools import combinations
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy.stats import wilcoxon
-
-
-def summarize_feature_frequency(
-    selected_features: pd.DataFrame,
-) -> pd.DataFrame:
-    """Summarize how often each feature is selected across outer folds."""
-    return (
-        selected_features
-        .groupby(["model", "feature"], as_index=False)
-        .agg(
-            selected_in_folds=("selected", "sum"),
-            selection_frequency=("selected", "mean"),
-            mean_mutual_information=("mutual_information_score", "mean"),
-            std_mutual_information=("mutual_information_score", "std"),
-            mean_mutual_information_rank=("mutual_information_rank", "mean"),
-        )
-        .sort_values(
-            ["model", "selected_in_folds", "mean_mutual_information"],
-            ascending=[True, False, False],
-        )
-    )
-
-
-def compute_feature_stability(
-    selected_features: pd.DataFrame,
-) -> pd.DataFrame:
-    """Compute pairwise Jaccard similarity between selected feature subsets."""
-    rows: list[dict[str, Any]] = []
-
-    for model_name, model_frame in selected_features.groupby("model"):
-        feature_sets = {
-            int(outer_fold): set(
-                fold_frame.loc[fold_frame["selected"], "feature"]
-            )
-            for outer_fold, fold_frame in model_frame.groupby("outer_fold")
-        }
-
-        for (fold_a, features_a), (fold_b, features_b) in combinations(
-            sorted(feature_sets.items()),
-            2,
-        ):
-            union = features_a | features_b
-            intersection = features_a & features_b
-            jaccard = len(intersection) / len(union) if union else 1.0
-            rows.append(
-                {
-                    "model": model_name,
-                    "outer_fold_a": fold_a,
-                    "outer_fold_b": fold_b,
-                    "features_in_a": len(features_a),
-                    "features_in_b": len(features_b),
-                    "intersection_size": len(intersection),
-                    "union_size": len(union),
-                    "jaccard_similarity": jaccard,
-                }
-            )
-
-    return pd.DataFrame(rows)
 
 
 def summarize_permutation_importance(
@@ -94,7 +35,7 @@ def compute_statistical_tests(
     fold_pivot = nested_scores.pivot(
         index="outer_fold",
         columns="model",
-        values="macro_f1",
+        values="accuracy",
     )
 
     if {"Decision Tree", "Random Forest"}.issubset(fold_pivot.columns):

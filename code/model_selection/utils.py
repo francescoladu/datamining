@@ -13,6 +13,7 @@ from sklearn.metrics import (
 from sklearn.pipeline import Pipeline
 
 from model_selection import config
+from shared.config import PHISHING_LABEL
 
 
 def select_rows(data: Any, indices: np.ndarray) -> Any:
@@ -26,14 +27,14 @@ def predict_with_phishing_probability(
     fitted_pipeline: Pipeline,
     X_validation: Any,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return class predictions and phishing probability (class -1)."""
+    """Return class predictions and phishing probability (class PHISHING_LABEL)."""
     y_pred = np.asarray(fitted_pipeline.predict(X_validation))
     classifier = fitted_pipeline.named_steps["classifier"]
 
-    phishing_positions = np.flatnonzero(classifier.classes_ == -1)
+    phishing_positions = np.flatnonzero(classifier.classes_ == PHISHING_LABEL)
     if phishing_positions.size != 1:
         raise ValueError(
-            "The fitted classifier must contain the phishing class encoded as -1."
+            f"The fitted classifier must contain the phishing class encoded as {PHISHING_LABEL}."
         )
 
     phishing_class_index = int(phishing_positions[0])
@@ -50,14 +51,14 @@ def compute_classification_metrics(
     y_validation: Any,
     sample_weight: Any | None = None,
 ) -> dict[str, float]:
-    """Compute classification metrics weighted by instance mass."""
+    """Compute classification metrics using the provided sample weights."""
     y_pred, phishing_probability = predict_with_phishing_probability(
         fitted_pipeline,
         X_validation,
     )
 
     y_val_array = np.asarray(y_validation)
-    y_phishing_binary = (y_val_array == -1).astype(int)
+    y_phishing_binary = (y_val_array == PHISHING_LABEL).astype(int)
     sw = np.asarray(sample_weight) if sample_weight is not None else None
 
     return {
@@ -70,14 +71,14 @@ def compute_classification_metrics(
         "phishing_precision": precision_score(
             y_val_array,
             y_pred,
-            pos_label=-1,
+            pos_label=PHISHING_LABEL,
             zero_division=0,
             sample_weight=sw,
         ),
         "phishing_recall": recall_score(
             y_val_array,
             y_pred,
-            pos_label=-1,
+            pos_label=PHISHING_LABEL,
             zero_division=0,
             sample_weight=sw,
         ),
