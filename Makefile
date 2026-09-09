@@ -63,7 +63,10 @@ export PYTHONPATH := code
 	check-experiment \
 	check-selected-train-data \
 	check-selected-data \
-	check-exp3-data
+	check-exp3-data \
+	experiment1 \
+	experiment2 \
+	experiment3 \
 
 
 # -----------------------------------------------------------------------------
@@ -100,6 +103,9 @@ help:
 	@printf "  %-22s %s\n" "make evaluate3" "Evaluate Experiment 3 on its held-out test set."
 	@printf "  %-22s %s\n" "make explain" "Run explainability for Experiment 3."
 	@printf "  %-22s %s\n" "make clean" "Remove datasets and generated outputs; preserve the venv."
+	@printf "  %-22s %s\n" "make experiment1" "Run the complete pipeline for Experiment 1."
+	@printf "  %-22s %s\n" "make experiment2" "Run the complete pipeline for Experiment 2."
+	@printf "  %-22s %s\n" "make experiment3" "Run the complete pipeline for Experiment 3."
 	@echo ""
 
 
@@ -326,6 +332,49 @@ explain: check-venv check-exp3-data
 	@echo "------------------------------------------------------------"
 	@"$(PYTHON)" -m explainability.main
 
+
+# -----------------------------------------------------------------------------
+# Complete experiment pipelines
+# -----------------------------------------------------------------------------
+
+experiment1:
+	@echo "============================================================"
+	@echo "RUNNING COMPLETE PIPELINE - EXPERIMENT 1"
+	@echo "============================================================"
+	@$(MAKE) --no-print-directory install1
+	@$(MAKE) --no-print-directory analyze1
+	@$(MAKE) --no-print-directory train1
+	@$(MAKE) --no-print-directory evaluate1
+	@echo "============================================================"
+	@echo "EXPERIMENT 1 PIPELINE COMPLETED SUCCESSFULLY"
+	@echo "============================================================"
+
+
+experiment2:
+	@echo "============================================================"
+	@echo "RUNNING COMPLETE PIPELINE - EXPERIMENT 2"
+	@echo "============================================================"
+	@$(MAKE) --no-print-directory install2
+	@$(MAKE) --no-print-directory analyze2
+	@$(MAKE) --no-print-directory train2
+	@$(MAKE) --no-print-directory evaluate2
+	@echo "============================================================"
+	@echo "EXPERIMENT 2 PIPELINE COMPLETED SUCCESSFULLY"
+	@echo "============================================================"
+
+
+experiment3:
+	@echo "============================================================"
+	@echo "RUNNING COMPLETE PIPELINE - EXPERIMENT 3"
+	@echo "============================================================"
+	@$(MAKE) --no-print-directory install3
+	@$(MAKE) --no-print-directory analyze3
+	@$(MAKE) --no-print-directory train3
+	@$(MAKE) --no-print-directory evaluate3
+	@$(MAKE) --no-print-directory explain
+	@echo "============================================================"
+	@echo "EXPERIMENT 3 PIPELINE COMPLETED SUCCESSFULLY"
+	@echo "============================================================"
 
 # -----------------------------------------------------------------------------
 # Cleanup
