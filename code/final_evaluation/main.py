@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
 
 module_dir = Path(__file__).resolve().parent
@@ -31,6 +32,7 @@ from shared.modeling import (
     build_pipeline,
     load_development_and_test,
     load_final_model_configuration,
+    load_model_configurations,
 )
 
 
@@ -103,6 +105,47 @@ def final_test_prediction_table(
     )
 
 
+def fit_candidate_models_and_test_accuracy(
+    *,
+    configurations: list[tuple[str, float, dict[str, Any]]],
+    X_dev: pd.DataFrame,
+    y_dev: pd.Series,
+    w_dev: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    w_test: pd.Series,
+    weighted: bool,
+) -> tuple[pd.DataFrame, dict[str, Pipeline]]:
+    """Fit each tuned candidate on development data and compute held-out accuracy."""
+    rows: list[dict[str, Any]] = []
+    fitted_models: dict[str, Pipeline] = {}
+
+    for model_name, _, parameters in configurations:
+        model = build_pipeline(model_name)
+        model.set_params(**parameters)
+
+        fit_kwargs: dict[str, Any] = {}
+        if weighted:
+            fit_kwargs["classifier__sample_weight"] = np.asarray(w_dev)
+        model.fit(X_dev, y_dev, **fit_kwargs)
+
+        y_pred = model.predict(X_test)
+        test_accuracy = accuracy_score(
+            y_test,
+            y_pred,
+            sample_weight=np.asarray(w_test) if weighted else None,
+        )
+        rows.append(
+            {
+                "model": model_name,
+                "test_accuracy": float(test_accuracy),
+            }
+        )
+        fitted_models[model_name] = model
+
+    return pd.DataFrame(rows), fitted_models
+
+
 def evaluate_experiment_pipeline(
     *,
     experiment_id: str,
@@ -127,16 +170,32 @@ def evaluate_experiment_pipeline(
     print("-" * 80)
 
     model_name, development_cv_score, parameters = load_final_model_configuration(parameters_path)
+    candidate_parameters_path = parameters_path.with_name(
+        "candidate_best_parameters.csv"
+    )
+    candidate_configurations = load_model_configurations(
+        candidate_parameters_path
+    )
     X_dev, y_dev, w_dev, X_test, y_test, w_test = load_development_and_test(dev_path, test_path)
 
-    final_model = build_pipeline(model_name)
-    final_model.set_params(**parameters)
-
-    fit_kwargs = {}
-    if weighted and w_dev is not None:
-        fit_kwargs["classifier__sample_weight"] = np.asarray(w_dev)
-
-    final_model.fit(X_dev, y_dev, **fit_kwargs)
+    candidate_test_metrics, fitted_candidate_models = (
+        fit_candidate_models_and_test_accuracy(
+            configurations=candidate_configurations,
+            X_dev=X_dev,
+            y_dev=y_dev,
+            w_dev=w_dev,
+            X_test=X_test,
+            y_test=y_test,
+            w_test=w_test,
+            weighted=weighted,
+        )
+    )
+    if model_name not in fitted_candidate_models:
+        raise ValueError(
+            f"Selected model {model_name!r} is missing from "
+            "candidate_best_parameters.csv."
+        )
+    final_model = fitted_candidate_models[model_name]
 
     train_metrics = compute_classification_metrics(
         fitted_pipeline=final_model,
@@ -175,6 +234,11 @@ def evaluate_experiment_pipeline(
     ])
 
     save_csv(metrics_table, metrics_dir / "test_metrics.csv", f"{experiment_id} test metrics")
+    save_csv(
+        candidate_test_metrics,
+        metrics_dir / "candidate_test_metrics.csv",
+        f"{experiment_id} candidate test metrics",
+    )
     save_csv(predictions, diag_dir / "test_predictions.csv", f"{experiment_id} test predictions")
     save_csv(error_summary, diag_dir / "error_summary.csv", f"{experiment_id} error summary")
 

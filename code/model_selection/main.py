@@ -196,6 +196,52 @@ def create_final_search(
     )
 
 
+def fit_final_candidate_searches(
+    X_dev: pd.DataFrame,
+    y_dev: pd.Series,
+    w_dev: pd.Series,
+) -> dict[str, GridSearchCV | RandomizedSearchCV]:
+    """Fit the final development-data search for each candidate model family."""
+    searches: dict[str, GridSearchCV | RandomizedSearchCV] = {}
+    for model_family in ("Decision Tree", "Random Forest"):
+        search = create_final_search(model_family, X_dev, w_dev)
+        search.fit(
+            X_dev,
+            y_dev,
+            classifier__sample_weight=np.asarray(w_dev),
+        )
+        searches[model_family] = search
+    return searches
+
+
+def build_candidate_best_parameters_table(
+    searches: dict[str, GridSearchCV | RandomizedSearchCV],
+    scoring_label: str,
+) -> pd.DataFrame:
+    """Collect the selected development-data configuration for each model family."""
+    rows: list[dict[str, Any]] = []
+    for model_family, search in searches.items():
+        selected_index = search.best_index_
+        selected_score = float(
+            search.cv_results_["mean_test_score"][selected_index]
+        )
+        max_score = float(np.max(search.cv_results_["mean_test_score"]))
+        rows.append(
+            {
+                "model": model_family,
+                "development_cv_score": selected_score,
+                "development_cv_metric": scoring_label,
+                "max_development_cv_score": max_score,
+                "parameters": json.dumps(
+                    search.best_params_,
+                    sort_keys=True,
+                    default=str,
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def run_experiment(
     *,
     experiment_id: str,
@@ -336,18 +382,19 @@ def run_experiment(
 
     best_model_family = str(nested_summary.index[0])
     print(f"Selected Model Family by accuracy: {best_model_family}")
-    print(f"Fitting final {best_model_family} search on the experiment dataset...")
+    print("Fitting final searches for both candidate model families...")
 
-    final_search = create_final_search(
-        best_model_family,
-        X_dev,
-        w_dev,
-)
-    final_search.fit(
+    final_searches = fit_final_candidate_searches(
         X_dev,
         y_dev,
-        classifier__sample_weight=np.asarray(w_dev),
+        w_dev,
     )
+    candidate_best_parameters = build_candidate_best_parameters_table(
+        final_searches,
+        scoring_label,
+    )
+
+    final_search = final_searches[best_model_family]
     final_model = final_search.best_estimator_
 
     selected_index = final_search.best_index_
@@ -383,6 +430,11 @@ def run_experiment(
         final_search_table,
         paths.hyperparameter_search / "final_search_results.csv",
         "final search candidates",
+    )
+    save_csv(
+        candidate_best_parameters,
+        paths.hyperparameter_search / "candidate_best_parameters.csv",
+        "candidate selected parameters",
     )
     save_csv(
         final_best_parameters,

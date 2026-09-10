@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,45 @@ def build_pipeline(model_name: str) -> Pipeline:
             ("classifier", classifier),
         ]
     )
+
+
+def load_model_configurations(
+    parameters_path: Path,
+) -> list[tuple[str, float, dict[str, Any]]]:
+    """Read candidate model configurations stored with serialized parameters."""
+    if not parameters_path.is_file():
+        raise FileNotFoundError(
+            "Candidate model-parameters CSV not found:\n"
+            f"{parameters_path}"
+        )
+
+    parameters_df = pd.read_csv(
+        parameters_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    required_columns = {"model", "development_cv_score", "parameters"}
+    missing_columns = required_columns.difference(parameters_df.columns)
+    if missing_columns:
+        raise ValueError(
+            "candidate_best_parameters.csv is missing required columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    configurations: list[tuple[str, float, dict[str, Any]]] = []
+    for _, row in parameters_df.iterrows():
+        model_name = row["model"].strip()
+        development_cv_score = float(row["development_cv_score"])
+        parameters = json.loads(row["parameters"])
+        if not parameters:
+            raise ValueError(
+                f"No pipeline parameters were found for model {model_name!r}."
+            )
+        configurations.append(
+            (model_name, development_cv_score, parameters)
+        )
+
+    return configurations
 
 
 def load_final_model_configuration(
